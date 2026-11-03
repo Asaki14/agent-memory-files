@@ -22,8 +22,8 @@ An extension for [oh-my-pi (OMP)](https://github.com/can1357/oh-my-pi) on top of
 | Feature | When | What it does |
 | :--- | :--- | :--- |
 | `/memories` | You want to see or fix what the agent remembers | Browse global and current-project memories, edit them in place, or delete them. |
-| Global memories | Every request | Injects your global memories, your own edits first, trimmed to the context window. Anything that looks like a credential is never injected. |
-| Session distillation | A session ends | A background worker keeps only preferences you stated, decisions you confirmed, and project facts with evidence. Failed runs retry on the next start. |
+| Global memories | Every request | Injects your global memories with their dates, your own edits first, trimmed to the context window. Facts Mnemopi derived from an injected memory are not repeated. Anything that looks like a credential is never injected. |
+| Session distillation | A main session ends | A background worker keeps only preferences you stated, decisions you confirmed, and lasting project facts with evidence; work reports and QA results are dropped. Subagent sessions are skipped. Failed runs retry on the next start. |
 | Transcript archiving | Always | Raw conversation copies are retired from recall, so old prompts never come back as instructions. History is kept. |
 
 ## Install

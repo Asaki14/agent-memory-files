@@ -10,18 +10,19 @@ Before each request, the extension reads the global bank and injects `<global_me
 |---|---|
 | 1 | Memories you edited (`user-memory-editor`) or corrected (`user-correction`) |
 | 2 | Other memories, by importance, then recency |
-| 3 | Mnemopi facts not already covered by a memory |
+| 3 | Mnemopi facts whose source memory is not injected |
 
 - If the context window cannot fit all of them, the lowest-ranked entries are dropped and the model is told how many were omitted.
 - Memories containing credentials (passwords, API keys, tokens, auth URLs; English and Chinese keywords) are never injected.
 - If the database cannot be read, the request proceeds without global memories and you get one warning. Requests are never blocked.
 - Built-in Mnemopi recall can also return global memories. Those duplicates are removed from the `<memories>` block; project recalls stay. A truncated recall item counts as a duplicate only if it is a prefix of at least 20 characters of a global memory.
+- Each entry shows the date its memory was created, so the model can judge staleness.
 
 ## Distillation
 
-On session exit or switch, the current branch's user messages, completed assistant replies, and `ask` selections are passed through a credential filter and handed to a detached worker over a pipe. OMP's shutdown hook has a 2-second limit, so the worker outlives the host. The worker:
+On session exit or switch, the current branch's user messages, completed assistant replies, and `ask` selections are passed through a credential filter and handed to a detached worker over a pipe. Subagent sessions are skipped: their user messages are the parent agent's task briefs, not the user's words. OMP's shutdown hook has a 2-second limit, so the worker outlives the host. The worker:
 
-1. Asks the `memory` role for at most 8 candidates, each with a verbatim evidence quote.
+1. Asks the `memory` role for at most 8 candidates, each with a verbatim evidence quote. Project facts must stay useful for months and not be rediscoverable from files, Git, or tools; work reports, QA results, measurements, and commit hashes are excluded.
 2. Drops individual candidates that lack matching evidence, attribute a preference or decision to the assistant, copy raw messages, or contain sensitive fields. The rest of the batch is kept.
 3. Runs one more model call to drop candidates already covered by existing global or project memories. New details, stricter conditions, and reversed decisions are kept.
 4. Saves the remaining candidates to the session's project bank with source `omp-auto-guidance`.

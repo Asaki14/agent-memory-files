@@ -13,9 +13,13 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Changed
 - Sources moved to `src/` and tests to `test/`; detailed behavior moved to `docs/how-it-works.md`.
 - The worker log is written to `logs/memory-guidance.log` next to the OMP agent directory, regardless of where the extension is installed.
+- Global memories show their creation date.
+- Facts Mnemopi derived from an injected global memory are no longer injected again as separate entries.
+- Distillation keeps only project facts that stay useful and cannot be rediscovered from the repository, and drops work reports, QA results, measurements, and commit hashes.
 
 ### Fixed
 - On a fresh install, reading memories before Mnemopi created its database no longer raises `unable to open database file`.
+- Subagent sessions are no longer distilled; their task briefs were being saved as user decisions.
 
 ## [0.1.0] - 2026-10-27
 

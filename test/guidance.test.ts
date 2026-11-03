@@ -138,7 +138,9 @@ test("A future-valid source does not prematurely mark its summary lineage as exp
 	addFact(f.memory, "future-source-fact", "future-source-summary", "Fact from a future-valid source");
 	const snapshot = readGlobalMemories(f.path);
 	expect(snapshot.content).toContain("Summary of a future-valid source");
-	expect(snapshot.content).toContain("Fact from a future-valid source");
+	// The fact restates its injected source, so it is folded into that entry rather than repeated.
+	expect(snapshot.entries.find(entry => entry.text === "Summary of a future-valid source")?.ids).toContain("future-source-fact");
+	expect(snapshot.content).not.toContain("Fact from a future-valid source");
 });
 
 test("Incomplete, duplicate, or out-of-range semantic decisions cannot silently discard candidates", () => {

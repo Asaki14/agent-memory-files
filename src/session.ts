@@ -83,7 +83,8 @@ export default function memoryGuidance(pi: ExtensionAPI): void {
 		}
 	});
 	const finishSession = async (_event: unknown, ctx: ExtensionContext): Promise<void> => {
-		if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi" || !ctx.memory ||
+		// Subagent "user" messages are the parent's task briefs, not the user's words.
+		if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi" || !ctx.memory || ctx.agent?.kind === "sub" ||
 			lookup("mnemopi.llmMode")?.get(Settings.instance) === "none") return;
 		const branch = ctx.sessionManager.getBranch();
 		const sourceEntry = branch.at(-1)?.id;

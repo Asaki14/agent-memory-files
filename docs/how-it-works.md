@@ -1,6 +1,6 @@
 # How it works
 
-Details behind each part of omp-mnemopi-memory. For setup, see the [README](../README.md).
+Details behind each part of agent-memory-files. For setup, see the [README](../README.md).
 
 ## Files and limits
 

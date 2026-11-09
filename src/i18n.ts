@@ -41,14 +41,14 @@ const catalogs: Record<string, Record<Key, string>> = { en, "zh-CN": zhCN };
 let active: Record<Key, string> = en;
 
 /**
- * Pick the UI language: `locale` in `<agentDir>/omp-mnemopi-memory.json`, else the POSIX locale
+ * Pick the UI language: `locale` in `<agentDir>/agent-memory-files.json`, else the POSIX locale
  * (`LC_ALL`, `LC_MESSAGES`, `LANG`). Chinese locales map to `zh-CN`; anything else is English.
  * Until this runs (e.g. in tests) text is English.
  */
 export function initLocale(agentDir: string): void {
 	let configured: unknown;
 	try {
-		const config: unknown = JSON.parse(readFileSync(join(agentDir, "omp-mnemopi-memory.json"), "utf8"));
+		const config: unknown = JSON.parse(readFileSync(join(agentDir, "agent-memory-files.json"), "utf8"));
 		if (config && typeof config === "object" && "locale" in config) configured = config.locale;
 	} catch {
 		// No config file: fall back to the environment.

@@ -1,16 +1,18 @@
 {
-  "name": "omp-mnemopi-memory",
+  "name": "agent-memory-files",
   "version": "0.1.0",
-  "description": "Global and project memory as plain Markdown files for oh-my-pi, with session-end distillation and review",
+  "description": "Long-term memory for coding agents as global and per-project Markdown files, with an oh-my-pi extension for loading, distillation, and review",
   "license": "MIT",
   "private": true,
   "type": "module",
   "keywords": [
+    "ai-agent",
+    "coding-agent",
+    "memory",
+    "agents-md",
     "omp",
     "oh-my-pi",
-    "omp-extension",
-    "memory",
-    "coding-agent"
+    "omp-extension"
   ],
   "files": [
     "index.ts",
@@ -27,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Asaki14/omp-mnemopi-memory.git"
+    "url": "https://github.com/Asaki14/agent-memory-files.git"
   },
   "scripts": {
     "test": "bun test"

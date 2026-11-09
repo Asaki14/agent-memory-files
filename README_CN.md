@@ -1,23 +1,23 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Asaki14/omp-mnemopi-memory/main/assets/logo.svg" width="120" />
-  <h1>omp-mnemopi-memory</h1>
+  <img src="https://raw.githubusercontent.com/Asaki14/agent-memory-files/main/assets/logo.svg" width="120" />
+  <h1>agent-memory-files</h1>
   <p><b>让编码 Agent 的记忆保持干净，也让你看得懂</b></p>
   <p><a href="README.md">English</a> · 中文</p>
-  <a href="https://github.com/Asaki14/omp-mnemopi-memory/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/Asaki14/omp-mnemopi-memory/test.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
-  <a href="https://github.com/Asaki14/omp-mnemopi-memory/stargazers"><img src="https://img.shields.io/github/stars/Asaki14/omp-mnemopi-memory?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/Asaki14/omp-mnemopi-memory/tags"><img src="https://img.shields.io/github/v/tag/Asaki14/omp-mnemopi-memory?label=version&style=flat-square" alt="Version"></a>
+  <a href="https://github.com/Asaki14/agent-memory-files/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/Asaki14/agent-memory-files/test.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
+  <a href="https://github.com/Asaki14/agent-memory-files/stargazers"><img src="https://img.shields.io/github/stars/Asaki14/agent-memory-files?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/Asaki14/agent-memory-files/tags"><img src="https://img.shields.io/github/v/tag/Asaki14/agent-memory-files?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
 </div>
 
 <br/>
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Asaki14/omp-mnemopi-memory/main/assets/flow.svg" width="1000" />
+  <img src="https://raw.githubusercontent.com/Asaki14/agent-memory-files/main/assets/flow.svg" width="1000" />
 </div>
 
 ## 功能
 
-一个 [oh-my-pi（OMP）](https://github.com/can1357/oh-my-pi) 扩展：把长期记忆存成两个普通 Markdown 文件，会话开始时全部加载。
+面向编码 Agent 的长期记忆，存成两个普通 Markdown 文件：一个全局，每个项目一个。任何 Agent 都能读写。本仓库里的 [oh-my-pi（OMP）](https://github.com/can1357/oh-my-pi) 扩展负责自动化：会话开始时加载、会话结束后提炼，以及 `/memories` 编辑和整理。
 
 | 功能 | 什么时候 | 做什么 |
 | :--- | :--- | :--- |
@@ -31,7 +31,7 @@
 ## 安装
 
 ```bash
-omp plugin install github:Asaki14/omp-mnemopi-memory
+omp plugin install github:Asaki14/agent-memory-files
 ```
 
 然后在 `~/.omp/agent/config.yml` 中关闭 OMP 自带记忆，指定提炼用的模型，执行 `/reload`：
@@ -50,7 +50,7 @@ printf 'AGENTS.memory.md\nAGENTS.memory.md.lock\n' >> ~/.config/git/ignore
 ```
 
 也可以直接让 Agent 帮你装：
-> Install omp-mnemopi-memory for me by reading https://github.com/Asaki14/omp-mnemopi-memory/blob/main/llms.txt
+> Install agent-memory-files for me by reading https://github.com/Asaki14/agent-memory-files/blob/main/llms.txt
 
 ## 使用
 
@@ -58,7 +58,7 @@ printf 'AGENTS.memory.md\nAGENTS.memory.md.lock\n' >> ~/.config/git/ignore
 
 执行 `/memories` 选择全局或项目，在编辑器里修改；超出上限也能保存，但会提醒你精简。也可以直接用任何编辑器打开文件。需要模型整理时，先切到你想用的模型，再执行 `/memories review`。
 
-界面支持英文和简体中文，默认跟随 `LC_ALL`、`LC_MESSAGES` 或 `LANG`，也可以在 `~/.omp/agent/omp-mnemopi-memory.json` 里固定：
+界面支持英文和简体中文，默认跟随 `LC_ALL`、`LC_MESSAGES` 或 `LANG`，也可以在 `~/.omp/agent/agent-memory-files.json` 里固定：
 
 ```json
 { "locale": "zh-CN" }
@@ -67,6 +67,13 @@ printf 'AGENTS.memory.md\nAGENTS.memory.md.lock\n' >> ~/.config/git/ignore
 发给模型的提示词始终是英文；提炼出的记忆跟随你主要使用的语言。
 
 后台结果记录在 `~/.omp/logs/memory-guidance.log`。完整流程和重试机制见 [How it works](docs/how-it-works.md)。
+
+## 其他 Agent
+
+记忆文件不依赖 OMP，只有上面的自动化功能是 OMP 专属。让其他 Agent 读同一份文件，就能共用一套记忆：
+
+- Claude Code：在 `~/.claude/CLAUDE.md` 加一行 `@~/.omp/agent/AGENTS.memory.md`，在项目的 `CLAUDE.md` 加一行 `@AGENTS.memory.md`。
+- 不支持文件引用的 Agent（如 Codex）：在它的 `AGENTS.md` 里加一句，要求任务开始时读取 `~/.omp/agent/AGENTS.memory.md` 和项目的 `AGENTS.memory.md`，并遵守文件开头写明的格式和上限。
 
 ## 为什么
 
@@ -77,9 +84,9 @@ printf 'AGENTS.memory.md\nAGENTS.memory.md.lock\n' >> ~/.config/git/ignore
 ## 卸载
 
 ```bash
-omp plugin uninstall omp-mnemopi-memory
+omp plugin uninstall agent-memory-files
 rm -rf ~/.omp/agent/memories/guidance-queue
-rm -f ~/.omp/agent/omp-mnemopi-memory.json
+rm -f ~/.omp/agent/agent-memory-files.json
 ```
 
 `AGENTS.memory.md` 文件保留，需要时手动删除。

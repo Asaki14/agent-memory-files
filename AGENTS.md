@@ -1,10 +1,10 @@
-# omp-mnemopi-memory Agent Guide
+# agent-memory-files Agent Guide
 
 This is the canonical agent guide for this repository. `CLAUDE.md` is a symlink to it; edit this file only.
 
 ## Project
 
-An oh-my-pi (OMP) extension that keeps long-term memory in two Markdown files (global and per project), loads them at session start, distills new memories when a session ends, and offers a `/memories` editor and review. OMP loads `index.ts`, declared in `package.json` under `omp.extensions`.
+Long-term memory for coding agents as two Markdown files (global and per project), with an oh-my-pi (OMP) extension that loads them at session start, distills new memories when a session ends, and offers a `/memories` editor and review. OMP loads `index.ts`, declared in `package.json` under `omp.extensions`.
 
 ## Repository Map
 

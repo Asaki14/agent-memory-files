@@ -5,13 +5,14 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Breaking
+- Renamed from omp-mnemopi-memory to agent-memory-files. The locale config file is now `~/.omp/agent/agent-memory-files.json`.
 - Memory moved from the Mnemopi backend to two Markdown files: `~/.omp/agent/AGENTS.memory.md` (global) and `AGENTS.memory.md` in each project root. Both are loaded in full at session start. Set `memory.backend` to `off`; the Mnemopi dependency, global injection, recall de-duplication, and transcript archiving are removed.
 - Global and project memory have separate admission bars and limits (20 entries / 4000 characters global, 30 entries / 6000 characters per project). Distillation stops writing to a full file.
 - `/memories` edits a whole file; `/memories review` edits files with the agent's tools and can move memories into another project's file.
 
 ### Added
-- Install as an OMP plugin with `omp plugin install github:Asaki14/omp-mnemopi-memory`.
-- Simplified Chinese interface, selected by `locale` in `omp-mnemopi-memory.json` or the POSIX locale.
+- Install as an OMP plugin with `omp plugin install github:Asaki14/agent-memory-files`.
+- Simplified Chinese interface, selected by `locale` in `agent-memory-files.json` or the POSIX locale.
 - GitHub Actions workflow running the test suite.
 - Chinese README, `llms.txt` for agent-driven installs, and an agent guide in `AGENTS.md`.
 - `/memories review` starts an explicit review and cleanup using the current conversation's model and tools, with argument completion.
@@ -42,5 +43,5 @@ All notable changes to this project are documented here. The format follows [Kee
 - Session-end distillation in a detached worker, with evidence checks, per-candidate rejection, semantic deduplication, and a retry queue.
 - Archiving of raw `coding-agent-transcript` memories and everything derived from them.
 
-[Unreleased]: https://github.com/Asaki14/omp-mnemopi-memory/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Asaki14/omp-mnemopi-memory/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Asaki14/agent-memory-files/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Asaki14/agent-memory-files/releases/tag/v0.1.0

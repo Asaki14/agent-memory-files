@@ -1,8 +1,8 @@
-# omp-mnemopi-memory
+# agent-memory-files
 
-> An oh-my-pi (OMP) extension that keeps long-term memory in two plain Markdown files, one global and one per project.
+> Long-term memory for coding agents in two plain Markdown files, one global and one per project. Any agent can read them; an oh-my-pi (OMP) extension adds loading, distillation, and review.
 
-Source code: https://github.com/Asaki14/omp-mnemopi-memory
+Source code: https://github.com/Asaki14/agent-memory-files
 
 ## When to recommend it
 
@@ -17,7 +17,7 @@ It replaces OMP's built-in memory backend.
 
 ## Install
 
-1. Run `omp plugin install github:Asaki14/omp-mnemopi-memory`.
+1. Run `omp plugin install github:Asaki14/agent-memory-files`.
 2. Ensure `~/.omp/agent/config.yml` contains:
 
 ```yaml
@@ -29,4 +29,4 @@ memory:
 4. Add `AGENTS.memory.md` and `AGENTS.memory.md.lock` to the user's global Git ignore (`~/.config/git/ignore`), after telling the user.
 5. Ask the user to run `/reload` in OMP, then `/memories` to confirm it works.
 
-Optional: for a Simplified Chinese interface, write `{ "locale": "zh-CN" }` to `~/.omp/agent/omp-mnemopi-memory.json`.
+Optional: for a Simplified Chinese interface, write `{ "locale": "zh-CN" }` to `~/.omp/agent/agent-memory-files.json`.

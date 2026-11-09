@@ -12,17 +12,17 @@ afterEach(() => {
 		else process.env[name] = value;
 	}
 	// Other suites assert English messages; restore the module default regardless of the machine locale.
-	const reset = mkdtempSync(join(tmpdir(), "omp-mnemopi-memory-i18n-"));
-	writeFileSync(join(reset, "omp-mnemopi-memory.json"), JSON.stringify({ locale: "en" }));
+	const reset = mkdtempSync(join(tmpdir(), "agent-memory-files-i18n-"));
+	writeFileSync(join(reset, "agent-memory-files.json"), JSON.stringify({ locale: "en" }));
 	initLocale(reset);
 	rmSync(reset, { recursive: true, force: true });
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 function agentDir(config?: object): string {
-	const root = mkdtempSync(join(tmpdir(), "omp-mnemopi-memory-i18n-"));
+	const root = mkdtempSync(join(tmpdir(), "agent-memory-files-i18n-"));
 	roots.push(root);
-	if (config) writeFileSync(join(root, "omp-mnemopi-memory.json"), JSON.stringify(config));
+	if (config) writeFileSync(join(root, "agent-memory-files.json"), JSON.stringify(config));
 	return root;
 }
 

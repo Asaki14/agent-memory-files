@@ -1,23 +1,23 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Asaki14/omp-mnemopi-memory/main/assets/logo.svg" width="120" />
-  <h1>omp-mnemopi-memory</h1>
+  <img src="https://raw.githubusercontent.com/Asaki14/agent-memory-files/main/assets/logo.svg" width="120" />
+  <h1>agent-memory-files</h1>
   <p><b>Memory your coding agent keeps clean, and you can actually read.</b></p>
   <p>English · <a href="README_CN.md">中文</a></p>
-  <a href="https://github.com/Asaki14/omp-mnemopi-memory/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/Asaki14/omp-mnemopi-memory/test.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
-  <a href="https://github.com/Asaki14/omp-mnemopi-memory/stargazers"><img src="https://img.shields.io/github/stars/Asaki14/omp-mnemopi-memory?style=flat-square" alt="Stars"></a>
-  <a href="https://github.com/Asaki14/omp-mnemopi-memory/tags"><img src="https://img.shields.io/github/v/tag/Asaki14/omp-mnemopi-memory?label=version&style=flat-square" alt="Version"></a>
+  <a href="https://github.com/Asaki14/agent-memory-files/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/Asaki14/agent-memory-files/test.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
+  <a href="https://github.com/Asaki14/agent-memory-files/stargazers"><img src="https://img.shields.io/github/stars/Asaki14/agent-memory-files?style=flat-square" alt="Stars"></a>
+  <a href="https://github.com/Asaki14/agent-memory-files/tags"><img src="https://img.shields.io/github/v/tag/Asaki14/agent-memory-files?label=version&style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License"></a>
 </div>
 
 <br/>
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/Asaki14/omp-mnemopi-memory/main/assets/flow.svg" width="1000" />
+  <img src="https://raw.githubusercontent.com/Asaki14/agent-memory-files/main/assets/flow.svg" width="1000" />
 </div>
 
 ## Features
 
-An [oh-my-pi (OMP)](https://github.com/can1357/oh-my-pi) extension that keeps long-term memory in two plain Markdown files, loaded in full at session start.
+Long-term memory for coding agents, kept in two plain Markdown files: one global, one per project. Any agent can read and edit them. The [oh-my-pi (OMP)](https://github.com/can1357/oh-my-pi) extension in this repository adds the automation: loading at session start, distillation when a session ends, and the `/memories` editor and review.
 
 | Feature | When | What it does |
 | :--- | :--- | :--- |
@@ -31,7 +31,7 @@ An [oh-my-pi (OMP)](https://github.com/can1357/oh-my-pi) extension that keeps lo
 ## Install
 
 ```bash
-omp plugin install github:Asaki14/omp-mnemopi-memory
+omp plugin install github:Asaki14/agent-memory-files
 ```
 
 Then turn off OMP's built-in memory, choose the distillation model in `~/.omp/agent/config.yml`, and run `/reload`:
@@ -50,7 +50,7 @@ printf 'AGENTS.memory.md\nAGENTS.memory.md.lock\n' >> ~/.config/git/ignore
 ```
 
 You can also tell your agent to install it:
-> Install omp-mnemopi-memory for me by reading https://github.com/Asaki14/omp-mnemopi-memory/blob/main/llms.txt
+> Install agent-memory-files for me by reading https://github.com/Asaki14/agent-memory-files/blob/main/llms.txt
 
 ## Usage
 
@@ -58,7 +58,7 @@ Each line starting with `- ` is one memory, written as `- [date] text`; headings
 
 Run `/memories`, pick global or project, and edit the file. Saving over the limit works but warns you to trim. Any editor works too. For model-assisted cleanup, select the model you want and run `/memories review`.
 
-The interface is in English or Simplified Chinese. It follows `LC_ALL`, `LC_MESSAGES`, or `LANG`, and you can pin it in `~/.omp/agent/omp-mnemopi-memory.json`:
+The interface is in English or Simplified Chinese. It follows `LC_ALL`, `LC_MESSAGES`, or `LANG`, and you can pin it in `~/.omp/agent/agent-memory-files.json`:
 
 ```json
 { "locale": "zh-CN" }
@@ -67,6 +67,13 @@ The interface is in English or Simplified Chinese. It follows `LC_ALL`, `LC_MESS
 Prompts sent to models stay in English. Distilled memories are written in the language you mainly used.
 
 Worker results are logged to `~/.omp/logs/memory-guidance.log`. The full pipeline and retry behavior are in [How it works](docs/how-it-works.md).
+
+## Other agents
+
+The memory files work without OMP; only the automation above is OMP-specific. Point other agents at the same files so they share one memory:
+
+- Claude Code: add `@~/.omp/agent/AGENTS.memory.md` to `~/.claude/CLAUDE.md`, and `@AGENTS.memory.md` to a project's `CLAUDE.md`.
+- Agents without file imports (for example Codex): add a line to their `AGENTS.md` telling them to read `~/.omp/agent/AGENTS.memory.md` and the project's `AGENTS.memory.md` at the start of a task, and to follow the format and limits stated in each file's header.
 
 ## Why
 
@@ -77,9 +84,9 @@ This extension takes the opposite stance: remember less, and make all of it visi
 ## Uninstall
 
 ```bash
-omp plugin uninstall omp-mnemopi-memory
+omp plugin uninstall agent-memory-files
 rm -rf ~/.omp/agent/memories/guidance-queue
-rm -f ~/.omp/agent/omp-mnemopi-memory.json
+rm -f ~/.omp/agent/agent-memory-files.json
 ```
 
 `AGENTS.memory.md` files are kept; delete them by hand if you no longer want them.

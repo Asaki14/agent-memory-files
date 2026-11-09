@@ -5,8 +5,7 @@ import { existsSync, readFileSync, writeSync } from "node:fs";
 import { Settings, type ExtensionAPI, type ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { roleCandidatePool } from "@oh-my-pi/pi-coding-agent/config/model-roles";
 import { resolveRoleChain } from "@oh-my-pi/pi-coding-agent/config/model-resolver";
-import { listEntries, listScopes, retiredGuidance } from "./store";
-import { storeGuidance } from "./automatic";
+import { appendMemories, entriesOf, limitsOf, readMemory } from "./memory-file";
 import { guidanceInput, GUIDANCE_PROMPT, parseGuidance } from "./guidance";
 import { enqueue, MAX_ATTEMPTS, release, type WorkerPayload } from "./queue";
 
@@ -42,19 +41,26 @@ export default function memoryWorker(pi: ExtensionAPI): void {
   try {
    payload = JSON.parse(readFileSync(3, "utf8")) as WorkerPayload;
    const { job } = payload;
-   const scopes = listScopes(job.globalDatabase, job.cwd);
-   const known = [...new Set(scopes.flatMap(scope => listEntries(scope).map(entry => entry.content)))];
-   const retired = retiredGuidance(scopes);
-   const globalTarget = job.database === job.globalDatabase;
-   const input = guidanceInput(job.conversation, known, retired, globalTarget);
+   const global = entriesOf(readMemory(job.global.path));
+   const project = entriesOf(readMemory(job.project.path));
+   const input = guidanceInput(job.conversation, {
+    global, project,
+    globalRoom: Math.max(0, limitsOf(job.global).entries - global.length),
+    projectRoom: Math.max(0, limitsOf(job.project).entries - project.length),
+   });
    let stored = 0;
    const rejected: string[] = [];
    if (input !== undefined) {
-    const facts = parseGuidance(await completeMemory(ctx, GUIDANCE_PROMPT, input), job.conversation, reason => rejected.push(reason))
-     .filter(fact => !known.includes(fact.content) && (!globalTarget || fact.kind !== "project_fact"));
+    const facts = parseGuidance(await completeMemory(ctx, GUIDANCE_PROMPT, input), job.conversation, reason => rejected.push(reason));
     // /delete triggers extraction on the session switch, then removes the transcript long before the model replies.
-    if (job.sessionFile === undefined || existsSync(job.sessionFile))
-     stored = storeGuidance(job.database, job.bank, job.sessionId, job.sourceEntry, job.cwd, facts);
+    if (job.sessionFile === undefined || existsSync(job.sessionFile)) {
+     for (const scope of [job.global, job.project]) {
+      const contents = facts.filter(fact => (fact.scope === "global") === scope.global).map(fact => fact.content);
+      const full = appendMemories(scope, contents);
+      stored += contents.length - full.length;
+      for (const content of full) rejected.push(`${scope.global ? "Global" : "Project"} memory is full: ${content}`);
+     }
+    }
    }
    release(payload.claimed);
    writeSync(2, JSON.stringify({ event: "memory_session_retained", sessionId: job.sessionId, stored,

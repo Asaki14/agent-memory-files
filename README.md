@@ -17,15 +17,16 @@
 
 ## Features
 
-An extension for [oh-my-pi (OMP)](https://github.com/can1357/oh-my-pi) on top of its Mnemopi memory backend.
+An [oh-my-pi (OMP)](https://github.com/can1357/oh-my-pi) extension that keeps long-term memory in two plain Markdown files, loaded in full at session start.
 
 | Feature | When | What it does |
 | :--- | :--- | :--- |
-| `/memories` | You want to see or fix what the agent remembers | Browse global and current-project memories, edit them in place, or delete them. |
-| `/memories review` | You explicitly request cleanup | Uses the current conversation's model and tools to review and organize global and current-project memories; it does not switch to the background memory model. |
-| Global memories | Every request | Injects all active global memories, without relevance filtering, with dates, user edits first, and context-budget trimming. Credentials and repeated derived facts are excluded; project-specific content must be rejected at admission. |
-| Session distillation | A main session ends | One background model call extracts evidenced, durable, action-changing facts and checks existing and retired memories. There is no automatic second review. Subagent sessions and sessions removed with `/delete` are skipped; failed runs retry on the next start. |
-| Transcript archiving | Always | Raw conversation copies are retired from recall, so old prompts never come back as instructions. History is kept. |
+| Global memory | Every session | `~/.omp/agent/AGENTS.memory.md`, with the strictest bar: only personal contracts and stable facts that hold in any conversation. Limit 20 entries, 4000 characters. |
+| Project memory | Every session in that project | `AGENTS.memory.md` in the project root (Git worktrees share the main checkout's file), for durable project decisions and constraints the repository does not record. Limit 30 entries, 6000 characters. |
+| Session distillation | A main session ends | One background call to the `memory` model extracts evidenced, durable facts and writes each to the global or project file according to its bar; a full file takes no more. Subagent sessions and sessions removed with `/delete` are skipped; failed runs retry on the next start. |
+| Agent upkeep | During a session | The agent knows both files, their bars, and limits, and adds, edits, merges, deletes, or moves memories to their own project's file with its file tools. |
+| `/memories` | You want to see or change memory | Pick global or project and edit the whole file in the editor. |
+| `/memories review` | You explicitly request cleanup | The current conversation's model trims, merges, and deletes entries, moves misplaced ones to global memory or their own project, and brings each file back within its limit. |
 
 ## Install
 
@@ -33,31 +34,29 @@ An extension for [oh-my-pi (OMP)](https://github.com/can1357/oh-my-pi) on top of
 omp plugin install github:Asaki14/omp-mnemopi-memory
 ```
 
-Then switch OMP to Mnemopi in `~/.omp/agent/config.yml` and run `/reload`:
+Then turn off OMP's built-in memory, choose the distillation model in `~/.omp/agent/config.yml`, and run `/reload`:
 
 ```yaml
 memory:
-  backend: mnemopi
-mnemopi:
-  scoping: per-project-tagged   # one global bank plus one bank per project
-  autoRetain: false             # distillation replaces full-transcript retain
+  backend: "off"
 modelRoles:
   memory: <provider>/<model>    # a remote model; local models are skipped
+```
+
+`AGENTS.memory.md` is personal; add it to your global Git ignore so it never gets committed:
+
+```bash
+printf 'AGENTS.memory.md\nAGENTS.memory.md.lock\n' >> ~/.config/git/ignore
 ```
 
 You can also tell your agent to install it:
 > Install omp-mnemopi-memory for me by reading https://github.com/Asaki14/omp-mnemopi-memory/blob/main/llms.txt
 
-> [!IMPORTANT]
-> Once enabled, raw `coding-agent-transcript` memories in every bank, and anything summarized from them, stop being recalled. They are invalidated through Mnemopi's API, not deleted. Back up `~/.omp/agent/memories/mnemopi/` first if you rely on them.
-
-Tested with OMP 18.13.1 and `@oh-my-pi/pi-mnemopi` 18.12.6.
-
 ## Usage
 
-Run `/memories`, pick **Global** or **Project**, and select a memory to edit it. Clear the text and save to delete it. Escape goes back one level. Changes apply from the next request.
+Each line starting with `- ` is one memory, written as `- [date] text`; headings and other text are free-form. Changes apply from the next session.
 
-For model-assisted cleanup, select the model you want in the current conversation and run `/memories review`. It applies justified edits, merges, and deletions through the agent's tools, moves misplaced memories to global memory or to the project they belong to (that project needs an existing memory bank), and asks about unresolved decisions. Identical text in global and project memory is listed twice; merge it manually or through the review. The bare `/memories` command still opens the editor.
+Run `/memories`, pick global or project, and edit the file. Saving over the limit works but warns you to trim. Any editor works too. For model-assisted cleanup, select the model you want and run `/memories review`.
 
 The interface is in English or Simplified Chinese. It follows `LC_ALL`, `LC_MESSAGES`, or `LANG`, and you can pin it in `~/.omp/agent/omp-mnemopi-memory.json`:
 
@@ -67,13 +66,13 @@ The interface is in English or Simplified Chinese. It follows `LC_ALL`, `LC_MESS
 
 Prompts sent to models stay in English. Distilled memories are written in the language you mainly used.
 
-Worker results are logged to `~/.omp/logs/memory-guidance.log`. The full pipeline, ranking rules, and retry behavior are in [How it works](docs/how-it-works.md).
+Worker results are logged to `~/.omp/logs/memory-guidance.log`. The full pipeline and retry behavior are in [How it works](docs/how-it-works.md).
 
 ## Why
 
-Mnemopi's default retain copies whole conversations into memory. Recall then surfaces old prompts, one-off commands, and abandoned plans as if they were standing instructions, and you have no easy way to see or correct what got stored.
+Memory systems that save whole conversations bring old prompts, one-off commands, and abandoned plans back as standing instructions, and you cannot easily see what was stored.
 
-This extension takes the opposite stance: remember less, and make all of it visible. Only two kinds of memory are saved: preferences and decisions the user stated explicitly, and project facts backed by a verbatim quote from the session. Anything uncertain is dropped rather than guessed. Everything that does get saved can be read and edited in one place.
+This extension takes the opposite stance: remember less, and make all of it visible. Memory is two files you can open and edit; admission bars and limits keep them from growing without end.
 
 ## Uninstall
 
@@ -83,11 +82,11 @@ rm -rf ~/.omp/agent/memories/guidance-queue
 rm -f ~/.omp/agent/omp-mnemopi-memory.json
 ```
 
-Saved memories stay in Mnemopi. Archived transcripts stay invalidated.
+`AGENTS.memory.md` files are kept; delete them by hand if you no longer want them.
 
 ## Contributing
 
-Issues and pull requests are welcome. Run `bun install && bun test` before submitting, and note user-visible changes under `Unreleased` in [CHANGELOG.md](CHANGELOG.md). Agent-facing repository notes live in [AGENTS.md](AGENTS.md).
+Issues and pull requests are welcome. Run `bun test` before submitting, and note user-visible changes under `Unreleased` in [CHANGELOG.md](CHANGELOG.md). Agent-facing repository notes live in [AGENTS.md](AGENTS.md).
 
 ## License
 

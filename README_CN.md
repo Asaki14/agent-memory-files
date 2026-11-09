@@ -17,15 +17,16 @@
 
 ## 功能
 
-一个基于 Mnemopi 记忆后端的 [oh-my-pi（OMP）](https://github.com/can1357/oh-my-pi) 扩展。
+一个 [oh-my-pi（OMP）](https://github.com/can1357/oh-my-pi) 扩展：把长期记忆存成两个普通 Markdown 文件，会话开始时全部加载。
 
 | 功能 | 什么时候 | 做什么 |
 | :--- | :--- | :--- |
-| `/memories` | 想查看或修正 Agent 记住了什么 | 浏览全局和当前项目的记忆，直接编辑或删除。 |
-| `/memories review` | 手动触发整理 | 使用当前对话的模型和工具审查整理全局与当前项目记忆，不切换到后台记忆模型。 |
-| 全局记忆 | 每次请求 | 全量注入有效全局记忆，不按任务相关性筛选；标注日期、优先保留用户编辑，并按上下文窗口裁剪；凭据和重复派生事实不注入，项目内容应在准入时排除。 |
-| 会话提炼 | 主会话结束 | 后台只调用一次模型，提取有证据、长期有效且影响后续行动的事实，同时参考已有和已删除记忆；不再自动二次审核；subagent 会话和用 `/delete` 删除的会话不提炼，失败任务下次启动重试。 |
-| 原文归档 | 始终 | 原始对话副本退出召回，旧提示词不会再被当成指令；历史记录保留。 |
+| 全局记忆 | 每次会话 | `~/.omp/agent/AGENTS.memory.md`，门槛最高：只收在任何对话里都成立的个人约定和稳定信息；上限 20 条、4000 字。 |
+| 项目记忆 | 在该项目的每次会话 | 项目根目录的 `AGENTS.memory.md`（Git worktree 共用主仓库的文件），只收仓库里查不到、之后仍有用的项目决定和约束；上限 30 条、6000 字。 |
+| 会话提炼 | 主会话结束 | 后台调用一次 `memory` 模型，提取有原话作证、长期有效的事实，按门槛分别写入全局或项目文件；文件满了就不再写入。subagent 会话和用 `/delete` 删除的会话不提炼，失败任务下次启动重试。 |
+| Agent 维护 | 会话中 | Agent 知道两个文件的位置和门槛，可以直接用文件工具新增、修改、合并、删除，或把记忆移到所属项目的文件。 |
+| `/memories` | 想查看或修改 | 选择全局或项目，在编辑器里直接改整份文件。 |
+| `/memories review` | 手动触发整理 | 用当前对话的模型精简、合并、删除记忆，把放错位置的记忆移到全局或所属项目，并把文件压回上限以内。 |
 
 ## 安装
 
@@ -33,31 +34,29 @@
 omp plugin install github:Asaki14/omp-mnemopi-memory
 ```
 
-然后在 `~/.omp/agent/config.yml` 中把 OMP 切到 Mnemopi，执行 `/reload`：
+然后在 `~/.omp/agent/config.yml` 中关闭 OMP 自带记忆，指定提炼用的模型，执行 `/reload`：
 
 ```yaml
 memory:
-  backend: mnemopi
-mnemopi:
-  scoping: per-project-tagged   # 一个全局库，加每个项目一个库
-  autoRetain: false             # 由提炼替代整段会话保存
+  backend: "off"
 modelRoles:
   memory: <provider>/<model>    # 远程模型；本地模型会被跳过
+```
+
+`AGENTS.memory.md` 只属于你自己，建议加入全局 Git 忽略，避免提交到仓库：
+
+```bash
+printf 'AGENTS.memory.md\nAGENTS.memory.md.lock\n' >> ~/.config/git/ignore
 ```
 
 也可以直接让 Agent 帮你装：
 > Install omp-mnemopi-memory for me by reading https://github.com/Asaki14/omp-mnemopi-memory/blob/main/llms.txt
 
-> [!IMPORTANT]
-> 启用后，所有库里的原始 `coding-agent-transcript` 记忆，以及由它们汇总出的内容，都不再参与召回。它们通过 Mnemopi 的 API 失效，并未删除。如果你依赖这些原文，请先备份 `~/.omp/agent/memories/mnemopi/`。
-
-已在 OMP 18.13.1 和 `@oh-my-pi/pi-mnemopi` 18.12.6 上测试。
-
 ## 使用
 
-执行 `/memories`，选择**全局**或**项目**，再选中一条记忆即可编辑。清空正文后保存就是删除。Escape 返回上一级。改动从下一次请求起生效。
+每行以 `- ` 开头为一条记忆，格式是 `- [日期] 内容`；标题和其他文字可以随意写。所有改动从下一次会话起生效。
 
-需要模型整理时，先在当前对话切换到你想用的模型，再执行 `/memories review`。Agent 会通过工具执行有依据的精简、合并、删除，并把放错位置的记忆移到全局或所属项目（该项目需已有记忆库），无法确定的事项再询问你。全局和项目里相同的文本显示为两条，需要合并时手动或由 review 处理。不带参数的 `/memories` 仍打开编辑面板。
+执行 `/memories` 选择全局或项目，在编辑器里修改；超出上限也能保存，但会提醒你精简。也可以直接用任何编辑器打开文件。需要模型整理时，先切到你想用的模型，再执行 `/memories review`。
 
 界面支持英文和简体中文，默认跟随 `LC_ALL`、`LC_MESSAGES` 或 `LANG`，也可以在 `~/.omp/agent/omp-mnemopi-memory.json` 里固定：
 
@@ -67,13 +66,13 @@ modelRoles:
 
 发给模型的提示词始终是英文；提炼出的记忆跟随你主要使用的语言。
 
-后台结果记录在 `~/.omp/logs/memory-guidance.log`。完整流程、排序规则和重试机制见 [How it works](docs/how-it-works.md)。
+后台结果记录在 `~/.omp/logs/memory-guidance.log`。完整流程和重试机制见 [How it works](docs/how-it-works.md)。
 
 ## 为什么
 
-Mnemopi 默认会把整段对话存进记忆。召回时，旧提示词、一次性命令和半途放弃的计划都会被当成长期指令带回来，而你很难看到、也很难改掉里面存了什么。
+自动保存整段对话的记忆系统，会把旧提示词、一次性命令和放弃的计划当成长期指令带回来，而且你很难看到里面存了什么。
 
-这个扩展反过来做：少记，并且全部看得见。只保存两类内容：用户明确表达的偏好和决定，以及能在会话中找到原话作证的项目事实；拿不准的宁可丢掉，也不猜。存下来的每一条都能在同一个地方查看和修改。
+这个扩展反过来做：少记，并且全部看得见。记忆就是两个文件，打开就能读能改；门槛和上限防止它们越写越长。
 
 ## 卸载
 
@@ -83,11 +82,11 @@ rm -rf ~/.omp/agent/memories/guidance-queue
 rm -f ~/.omp/agent/omp-mnemopi-memory.json
 ```
 
-已保存的记忆仍留在 Mnemopi 中，已归档的原文保持失效。
+`AGENTS.memory.md` 文件保留，需要时手动删除。
 
 ## 参与贡献
 
-欢迎提 Issue 和 PR。提交前请运行 `bun install && bun test`，并把用户可感知的改动写进 [CHANGELOG.md](CHANGELOG.md) 的 `Unreleased`。面向 Agent 的仓库说明见 [AGENTS.md](AGENTS.md)。
+欢迎提 Issue 和 PR。提交前请运行 `bun test`，并把用户可感知的改动写进 [CHANGELOG.md](CHANGELOG.md) 的 `Unreleased`。面向 Agent 的仓库说明见 [AGENTS.md](AGENTS.md)。
 
 ## 许可证
 

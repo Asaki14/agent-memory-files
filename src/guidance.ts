@@ -6,7 +6,8 @@ export interface GuidanceMessage {
 	source?: { kind: "ask"; toolCallId: string; question: string; options: unknown };
 }
 export type GuidanceConversation = GuidanceMessage[];
-export interface GuidanceFact { kind: "preference" | "decision" | "project_fact"; content: string }
+export type GuidanceScope = "global" | "project";
+export interface GuidanceFact { kind: "preference" | "decision" | "project_fact"; scope: GuidanceScope; content: string }
 
 interface ConversationSource {
 	role: string;
@@ -69,12 +70,13 @@ source.kind=ask marks a confirmation made through the platform's choice control.
 Do not store raw prompts, verbatim conversation or corrections, questions, one-off commands, test or hypothetical cases, todos, plans, temporary state, version/date fragments, or secrets. Do not derive general rules from a single event.
 Do not memorize configuration dumps, routing/domain/node lists, directory inventories, migration reports, current tool/provider choices, tuning parameters, or explanations of how existing tools work. Read their source of truth when needed. Preserve only a non-recoverable durable constraint, without the implementation snapshot.
 One memory must express one durable fact. Never bundle a preference with setup, migration history, current paths/settings, or an implementation inventory. Tool/ecosystem adoption and installation layout are recoverable setup, not a standing interaction preference. If only one clause qualifies, distill that clause; do not retain the surrounding snapshot.
-Global memory is a small standing user contract or stable user profile valid in every conversation, independent of the current project, task, or topic. Being useful in several unrelated projects is NOT sufficient. Admit only explicit user-wide interaction preferences or stable personal facts whose scope remains correct when injected into an arbitrary conversation. A conditional interaction rule can qualify if its scope is user-wide; it need not trigger in every reply. App configuration, repository/host constraints, and project workflows belong to project memory even if phrased as "always" or "以后". All admitted global memories are injected on every request, without a relevance filter; solve noise by rejecting poor admissions, not by hiding them at retrieval. Default to project scope; never promote a project fact to global memory.
-retired_memories are negative feedback, not facts to restore. Do not recreate or paraphrase them, including their durable-looking subclauses, unless a current user message explicitly requests restoring that specific memory. Deletion does not prove the old claim false or authorize a new opposite rule.
-known_memories are active memories in scope. Compare meanings, not wording; do not emit a candidate if all of its durable information is already covered, including when several known memories jointly cover it. New implementation detail alone does not justify a new memory. If global_target=true, every emitted candidate must meet the global admission bar; do not emit project_fact items.
+Two scopes with different bars. Both files are injected in full at every session start, so every admission costs context; prefer fewer, denser memories.
+GLOBAL (strictest): a small standing user contract or stable user profile valid in every conversation, independent of the current project, task, or topic. Being useful in several unrelated projects is NOT sufficient. Admit only explicit user-wide interaction preferences or stable personal facts whose scope remains correct when injected into an arbitrary conversation. A conditional interaction rule can qualify if its scope is user-wide. App configuration, repository/host constraints, and project workflows are never global even if phrased as "always" or "以后". project_fact items are never global.
+PROJECT (strict): a durable decision, constraint, or preference specific to this project that will still matter in later sessions and cannot be read from the repository, its docs, configuration, or Git history. Default to project scope; never promote a project fact to global memory.
+global_memories and project_memories are the current contents of each scope. Compare meanings, not wording; do not emit a candidate if all of its durable information is already covered, including when several memories jointly cover it. New implementation detail alone does not justify a new memory. global_room and project_room are the remaining entry slots; emit at most that many items for each scope, and nothing for a scope whose room is 0.
 Do not store work reports: what was done, built, fixed, committed, deployed, downloaded or imported in this session; verification, QA or review results; measurements, coordinates, sizes, durations or pixel values; commit hashes; progress or open issues that the next change will make stale.
-Write each memory as a concise, self-contained third-person statement in the language the user mainly used. Keep the applicable project, conditions, and necessary dates; never generalize a project requirement into a global persona or permanent instruction. At most 300 characters each; do not repeat what known memories already cover.
-Return JSON only: {"memories":[{"kind":"preference|decision|project_fact","content":"the distilled fact","from":"user|assistant","evidence":"a short quote that appears verbatim in that party's messages"}]}.
+Write each memory as a concise, self-contained third-person statement in the language the user mainly used. Keep the applicable conditions and necessary dates; never generalize a project requirement into a global persona or permanent instruction. At most 300 characters each.
+Return JSON only: {"memories":[{"kind":"preference|decision|project_fact","scope":"global|project","content":"the distilled fact","from":"user|assistant","evidence":"a short quote that appears verbatim in that party's messages"}]}.
 At most 8 items; return {"memories":[]} when nothing qualifies. evidence is used only to verify the source and is never stored as guidance.`;
 
 /** Exclude credential-bearing messages before any retrieval or remote extraction. */
@@ -82,11 +84,14 @@ export function safeConversation(conversation: GuidanceConversation): GuidanceCo
 	return conversation.filter(message => message.content.trim() && !hasSecret(JSON.stringify(message)));
 }
 
-export function guidanceInput(conversation: GuidanceConversation, known: string[], retired: string[] = [], globalTarget = false): string | undefined {
+export interface MemoryState { global: string[]; project: string[]; globalRoom: number; projectRoom: number }
+
+export function guidanceInput(conversation: GuidanceConversation, state: MemoryState): string | undefined {
 	const messages = safeConversation(conversation);
 	if (!messages.some(message => message.role === "user") || !messages.some(message => message.role === "assistant")) return undefined;
-	return JSON.stringify({ messages, known_memories: known.filter(text => !hasSecret(text)),
-		retired_memories: retired.filter(text => !hasSecret(text)), global_target: globalTarget });
+	return JSON.stringify({ messages,
+		global_memories: state.global.filter(text => !hasSecret(text)), project_memories: state.project.filter(text => !hasSecret(text)),
+		global_room: state.globalRoom, project_room: state.projectRoom });
 }
 
 /**
@@ -109,16 +114,17 @@ export function parseGuidance(text: string, conversation: GuidanceConversation, 
 
 /** Returns the accepted fact or the rejection reason. */
 function checkCandidate(item: unknown, messages: GuidanceConversation): GuidanceFact | string {
-	if (!item || typeof item !== "object" || !("kind" in item) || !("content" in item) || !("from" in item) || !("evidence" in item)) {
-		return "Candidate is missing a valid kind, content, or evidence.";
+	if (!item || typeof item !== "object" || !("kind" in item) || !("scope" in item) || !("content" in item) || !("from" in item) || !("evidence" in item)) {
+		return "Candidate is missing a valid kind, scope, content, or evidence.";
 	}
-	const { kind, content: raw, from, evidence } = item;
-	if ((kind !== "preference" && kind !== "decision" && kind !== "project_fact") ||
+	const { kind, scope, content: raw, from, evidence } = item;
+	if ((kind !== "preference" && kind !== "decision" && kind !== "project_fact") || (scope !== "global" && scope !== "project") ||
 		typeof raw !== "string" || !raw.trim() || raw.length > 300 ||
 		(from !== "user" && from !== "assistant") || typeof evidence !== "string" || !evidence.trim()) {
-		return "Candidate is missing a valid kind, content, or evidence.";
+		return "Candidate is missing a valid kind, scope, content, or evidence.";
 	}
 	if (kind !== "project_fact" && from !== "user") return "Preferences and decisions must be confirmed by the user.";
+	if (scope === "global" && kind === "project_fact") return "Project facts cannot be global memories.";
 	if (!messages.some(message => message.role === from && message.content.includes(evidence))) {
 		return "Evidence does not appear in this session.";
 	}
@@ -129,6 +135,6 @@ function checkCandidate(item: unknown, messages: GuidanceConversation): Guidance
 			(message.role === "user" && content.replace(/\s+/g, " ").includes(message.content.trim().replace(/\s+/g, " "))))) {
 		return "Raw text, conversation labels, or sensitive fields cannot be stored as guidance.";
 	}
-	return { kind, content };
+	return { kind, scope, content };
 }
 

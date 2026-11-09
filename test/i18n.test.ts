@@ -40,8 +40,8 @@ test("without a config file, a Chinese POSIX locale selects Chinese and anything
 	delete process.env.LC_MESSAGES;
 	process.env.LANG = "zh_TW.UTF-8";
 	initLocale(agentDir());
-	expect(t("saved")).toBe("已保存");
+	expect(t("saved")).toBe("已保存，下次会话生效");
 	process.env.LANG = "fr_FR.UTF-8";
 	initLocale(agentDir());
-	expect(t("saved")).toBe("Saved");
+	expect(t("saved")).toBe("Saved; applies from the next session");
 });

@@ -2,9 +2,11 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { GuidanceConversation } from "./guidance";
+import type { MemoryScope } from "./memory-file";
 
 export interface GuidanceJob {
-	database: string; globalDatabase: string; bank: string; cwd: string; sessionId: string; sourceEntry: string;
+	/** Memory files resolved when the session ended. */
+	global: MemoryScope; project: MemoryScope; cwd: string; sessionId: string; sourceEntry: string;
 	/** Transcript path; once it is gone, the user deleted the session and nothing is stored. */
 	sessionFile?: string;
 	conversation: GuidanceConversation;

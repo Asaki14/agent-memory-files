@@ -1,18 +1,13 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { Writable } from "node:stream";
 import { Settings, type ExtensionAPI, type ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { lookup } from "@oh-my-pi/pi-coding-agent/config/registry";
-import { cfgMemoryBackend } from "@oh-my-pi/pi-coding-agent/memory-backend/settings";
-import { databasePath } from "./config";
 import { t } from "./i18n";
-import { archiveRawMemories } from "./archive";
-import { conversationFromMessages, guidanceInput, safeConversation } from "./guidance";
+import { conversationFromMessages, safeConversation } from "./guidance";
+import { memoryContext, memoryScopes } from "./memory-file";
 import { claimQueued, enqueue, MAX_ATTEMPTS, queueDirectory, release, type WorkerPayload } from "./queue";
 
-const MEMORY_POLICY = "Long-term memory is opt-in by value, not a session summary. Save only user-evidenced, durable, action-changing facts that cannot cheaply be recovered from files, configuration, tools, or existing instructions. Task corrections, trials, current settings, config dumps, directory inventories, migrations, tool/ecosystem adoption, work reports, plans, and examples do not qualify. Store one durable fact per memory, never a preference bundled with recoverable setup or implementation history. An explicit remember request still requires distillation and deduplication. Global memory is a small standing user contract or stable user profile valid in every conversation, independent of project/task/topic; usefulness in multiple projects is insufficient. User-wide conditional interaction rules may qualify without triggering in every reply. App configuration, repository/host constraints, and project workflows stay project-scoped even when phrased as always. Every admitted global memory is injected on every request without relevance filtering; improve admission quality, not retrieval selectivity. Do not recreate retired memories or their subclauses without explicit user restoration. Never store secrets.";
 const workerPath = join(import.meta.dir, "worker.ts");
 /** `~/.omp/logs/memory-guidance.log` for the default agent dir; independent of where the extension is installed. */
 function logPath(): string {
@@ -49,10 +44,9 @@ function dispatch(cwd: string, payload: WorkerPayload): void {
 
 export default function memoryGuidance(pi: ExtensionAPI): void {
 	let lastHandled = "";
-	pi.on("session_start", () => {
-		if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi") return;
-		archiveRawMemories(databasePath(Settings.instance, lookup("mnemopi.dbPath")));
-		if (lookup("mnemopi.llmMode")?.get(Settings.instance) === "none") return;
+	let context = "";
+	pi.on("session_start", (_event, ctx) => {
+		context = memoryContext(Settings.instance.getAgentDir(), ctx.cwd);
 		const queueDir = queueDirectory(Settings.instance.getAgentDir());
 		for (const claimed of claimQueued(queueDir)) {
 			try {
@@ -65,47 +59,25 @@ export default function memoryGuidance(pi: ExtensionAPI): void {
 			}
 		}
 	});
-	pi.on("input", () => {
-		if (cfgMemoryBackend.get(Settings.instance) === "mnemopi") archiveRawMemories(databasePath(Settings.instance, lookup("mnemopi.dbPath")));
-		return { action: "continue" as const };
-	});
 	pi.on("before_agent_start", (event) => {
-		if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi") return;
-		return { systemPrompt: [...event.systemPrompt, MEMORY_POLICY] };
-	});
-	pi.on("tool_call", (event) => {
-		if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi") return;
-		const name = event.toolName.replace(/^.*\./, "");
-		const input = event.input;
-		const device = input && typeof input === "object" && "path" in input ? input.path : undefined;
-		if (name === "recall" || name === "reflect" || (name === "write" && (device === "xd://recall" || device === "xd://reflect"))) {
-			archiveRawMemories(databasePath(Settings.instance, lookup("mnemopi.dbPath")));
-		}
+		if (context) return { systemPrompt: [...event.systemPrompt, context] };
 	});
 	const finishSession = async (_event: unknown, ctx: ExtensionContext): Promise<void> => {
 		// Subagent "user" messages are the parent's task briefs, not the user's words.
-		if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi" || !ctx.memory || ctx.agent?.kind === "sub" ||
-			lookup("mnemopi.llmMode")?.get(Settings.instance) === "none") return;
+		if (ctx.agent?.kind === "sub") return;
 		const branch = ctx.sessionManager.getBranch();
 		const sourceEntry = branch.at(-1)?.id;
 		if (!sourceEntry) return;
 		const sessionId = ctx.sessionManager.getSessionId();
 		const key = `${sessionId}:${sourceEntry}`;
 		if (key === lastHandled) return;
-		const conversation = conversationFromMessages(branch.filter(entry => entry.type === "message").map(entry => entry.message));
-		const messages = safeConversation(conversation);
-		if (guidanceInput(messages, []) === undefined) return;
+		const messages = safeConversation(conversationFromMessages(branch.filter(entry => entry.type === "message").map(entry => entry.message)));
+		if (!messages.some(message => message.role === "user") || !messages.some(message => message.role === "assistant")) return;
 		try {
-			const status = await ctx.memory.status();
-			if (!status.active || status.backend !== "mnemopi" || !status.database || !status.retainBank) {
-				throw new Error(t("noTarget"));
-			}
-			const database = status.database.startsWith("~/") ? join(homedir(), status.database.slice(2)) : status.database;
-			if (!isAbsolute(database) || !existsSync(database)) throw new Error(t("noDatabase"));
+			const [global, project] = memoryScopes(Settings.instance.getAgentDir(), ctx.cwd);
 			lastHandled = key;
 			dispatch(ctx.cwd, {
-				job: { database, globalDatabase: databasePath(Settings.instance, lookup("mnemopi.dbPath")), bank: status.retainBank,
-					cwd: ctx.cwd, sessionId, sourceEntry, sessionFile: ctx.sessionManager.getSessionFile(), conversation: messages },
+				job: { global, project, cwd: ctx.cwd, sessionId, sourceEntry, sessionFile: ctx.sessionManager.getSessionFile(), conversation: messages },
 				attempts: 0, queueDir: queueDirectory(Settings.instance.getAgentDir()),
 			});
 		} catch (error) {

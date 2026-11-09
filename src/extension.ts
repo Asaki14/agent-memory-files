@@ -1,108 +1,64 @@
 import { Settings, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { cfgMemoryBackend } from "@oh-my-pi/pi-coding-agent/memory-backend/settings";
-import { lookup } from "@oh-my-pi/pi-coding-agent/config/registry";
-import { databasePath } from "./config";
 import { t } from "./i18n";
-import { deleteEntry, listEntries, listScopes, liveProjectEdits, saveEntry, type MemoryEntry, type MemoryScope } from "./store";
-import { refreshMemoryStatus } from "./status";
+import { limitsOf, memoryScopes, MemoryConflictError, readMemory, usageOf, writeMemory, type MemoryScope } from "./memory-file";
 import { reviewPrompt } from "./review";
 
-const LIVE_TYPE = "memory-editor-live-project";
-function currentDatabasePath(): string {
-	return databasePath(Settings.instance, lookup("mnemopi.dbPath"));
-}
 function refreshStatus(ctx: ExtensionContext): void {
-	refreshMemoryStatus(ctx, cfgMemoryBackend.get(Settings.instance) === "mnemopi" ? currentDatabasePath() : undefined);
+	const count = memoryScopes(Settings.instance.getAgentDir(), ctx.cwd)
+		.reduce((sum, scope) => sum + usageOf(readMemory(scope.path)).entries, 0);
+	ctx.ui.setStatus("global-memory", t("status", { count }));
 }
-async function editMemory(scope: MemoryScope, entry: MemoryEntry, ctx: ExtensionCommandContext): Promise<void> {
-	let draft = entry.content;
-	for (;;) {
-		const result = await ctx.ui.editor(t("editTitle"), draft);
-		if (result === undefined || result === entry.content) return;
-		draft = result;
-		try {
-			if (!draft.trim()) {
-				const confirmed = await ctx.ui.confirm(t("deleteTitle"), `${entry.content.slice(0, 160)}\n\n${t("deleteBody")}`);
-				if (!confirmed) { draft = entry.content; continue; }
-				deleteEntry(scope, entry);
-				refreshStatus(ctx);
-				ctx.ui.notify(t("deleted"), "info");
-				return;
-			}
-			saveEntry(scope, entry, draft);
-			refreshStatus(ctx);
-			ctx.ui.notify(t("saved"), "info");
-			return;
-		} catch (error) {
-			ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
-			if (await ctx.ui.select(t("draftNotSaved"), [t("keepEditing"), t("discardDraft")]) !== t("keepEditing")) return;
-		}
-	}
+
+function label(scope: MemoryScope): string {
+	const usage = usageOf(readMemory(scope.path));
+	const limit = limitsOf(scope);
+	return t(scope.global ? "globalLabel" : "projectLabel", { entries: usage.entries, limit: limit.entries });
 }
-async function openMemories(_args: string, ctx: ExtensionCommandContext): Promise<void> {
-	if (!ctx.hasUI) { ctx.ui.notify(t("needsUI"), "error"); return; }
-	if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi") {
-		ctx.ui.notify(t("notMnemopi"), "error"); return;
-	}
-	await ctx.waitForIdle();
+
+async function editFile(scope: MemoryScope, ctx: ExtensionCommandContext): Promise<void> {
+	const original = readMemory(scope.path);
+	const edited = await ctx.ui.editor(t("editTitle", { path: scope.path }), original);
+	if (edited === undefined || edited === original) return;
 	try {
-		for (;;) {
-			const scopes = listScopes(currentDatabasePath(), ctx.cwd);
-			const categories = scopes.map(scope => `${t(scope.global ? "global" : "project")} · ${listEntries(scope).length}`);
-			const category = await ctx.ui.select(t("memories"), categories);
-			if (category === undefined) return;
-			const scope = scopes[categories.indexOf(category)];
-			if (!scope) return;
-			for (;;) {
-				const entries = listEntries(scope);
-				if (!entries.length) {
-					ctx.ui.notify(t(scope.global ? "noGlobal" : "noProject"), "info");
-					break;
-				}
-				const labels = entries.map(entry => entry.content.replace(/\s+/g, " "));
-				const selected = await ctx.ui.select(t(scope.global ? "globalMemories" : "projectMemories"), labels);
-				if (selected === undefined) break;
-				const entry = entries[labels.indexOf(selected)];
-				if (entry) await editMemory(scope, entry, ctx);
-			}
-		}
+		writeMemory(scope, original, edited);
 	} catch (error) {
-		ctx.ui.notify(t("cannotOpen", { error: error instanceof Error ? error.message : String(error) }), "error");
+		ctx.ui.notify(error instanceof MemoryConflictError ? t("conflict") : String(error), "error");
+		return;
+	}
+	refreshStatus(ctx);
+	const usage = usageOf(edited);
+	const limit = limitsOf(scope);
+	if (usage.entries > limit.entries || usage.chars > limit.chars) {
+		ctx.ui.notify(t("overLimit", { entries: usage.entries, chars: usage.chars, maxEntries: limit.entries, maxChars: limit.chars }), "warning");
+	} else ctx.ui.notify(t("saved"), "info");
+}
+
+async function openMemories(ctx: ExtensionCommandContext): Promise<void> {
+	if (!ctx.hasUI) { ctx.ui.notify(t("needsUI"), "error"); return; }
+	await ctx.waitForIdle();
+	for (;;) {
+		const scopes = memoryScopes(Settings.instance.getAgentDir(), ctx.cwd);
+		const labels = scopes.map(label);
+		const selected = await ctx.ui.select(t("memories"), labels);
+		const scope = selected === undefined ? undefined : scopes[labels.indexOf(selected)];
+		if (!scope) return;
+		await editFile(scope, ctx);
 	}
 }
+
 export default function memoryEditor(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => { refreshStatus(ctx); });
-	pi.on("input", (_event, ctx) => { refreshStatus(ctx); return { action: "continue" as const }; });
 	pi.registerCommand("memories", {
 		description: t("commandDescription"),
 		getArgumentCompletions: prefix => "review".startsWith(prefix)
 			? [{ value: "review", label: `review: ${t("reviewDescription")}` }] : null,
 		handler: async (args, ctx) => {
-			if (!args.trim()) return openMemories(args, ctx);
+			if (!args.trim()) return openMemories(ctx);
 			if (args.trim() !== "review") { ctx.ui.notify(t("commandUsage"), "warning"); return; }
-			if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi") {
-				ctx.ui.notify(t("notMnemopi"), "error"); return;
-			}
 			await ctx.waitForIdle();
-			try {
-				const prompt = reviewPrompt(currentDatabasePath(), ctx.cwd);
-				if (!prompt) { ctx.ui.notify(t("noReviewMemories"), "info"); return; }
-				pi.sendMessage({ customType: "memory-review", content: prompt, display: true }, { triggerTurn: true });
-			} catch (error) {
-				ctx.ui.notify(t("cannotOpen", { error: error instanceof Error ? error.message : String(error) }), "error");
-			}
+			const prompt = reviewPrompt(Settings.instance.getAgentDir(), ctx.cwd);
+			if (!prompt) { ctx.ui.notify(t("noReviewMemories"), "info"); return; }
+			pi.sendMessage({ customType: "memory-review", content: prompt, display: true }, { triggerTurn: true });
 		},
-	});
-	pi.on("context", async (event, ctx) => {
-		if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi") return;
-		const messages = event.messages.filter(message => message.role !== "custom" || message.customType !== LIVE_TYPE);
-		const edits = liveProjectEdits(currentDatabasePath(), ctx.cwd);
-		if (!edits.length) return { messages };
-		return { messages: [{
-			role: "custom" as const, customType: LIVE_TYPE, display: false, attribution: "agent" as const, timestamp: 0,
-			content: ["<memory_editor_updates>", "Project memories the user edited directly; these are the current versions:",
-				...edits.map(row => `- [${row.id}] ${row.content.replaceAll("<", "&lt;").replaceAll(">", "&gt;")}`),
-				"</memory_editor_updates>"].join("\n"),
-		}, ...messages] };
 	});
 }

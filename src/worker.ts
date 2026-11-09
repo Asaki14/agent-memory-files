@@ -1,7 +1,7 @@
 import { completeSimple } from "@oh-my-pi/pi-ai";
 import { clampThinkingLevelForModel } from "@oh-my-pi/pi-catalog/model-thinking";
 import { concreteThinkingLevel, shouldDisableReasoning, toReasoningEffort } from "@oh-my-pi/pi-tui/thinking";
-import { readFileSync, writeSync } from "node:fs";
+import { existsSync, readFileSync, writeSync } from "node:fs";
 import { Settings, type ExtensionAPI, type ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { roleCandidatePool } from "@oh-my-pi/pi-coding-agent/config/model-roles";
 import { resolveRoleChain } from "@oh-my-pi/pi-coding-agent/config/model-resolver";
@@ -52,7 +52,9 @@ export default function memoryWorker(pi: ExtensionAPI): void {
    if (input !== undefined) {
     const facts = parseGuidance(await completeMemory(ctx, GUIDANCE_PROMPT, input), job.conversation, reason => rejected.push(reason))
      .filter(fact => !known.includes(fact.content) && (!globalTarget || fact.kind !== "project_fact"));
-    stored = storeGuidance(job.database, job.bank, job.sessionId, job.sourceEntry, job.cwd, facts);
+    // /delete triggers extraction on the session switch, then removes the transcript long before the model replies.
+    if (job.sessionFile === undefined || existsSync(job.sessionFile))
+     stored = storeGuidance(job.database, job.bank, job.sessionId, job.sourceEntry, job.cwd, facts);
    }
    release(payload.claimed);
    writeSync(2, JSON.stringify({ event: "memory_session_retained", sessionId: job.sessionId, stored,

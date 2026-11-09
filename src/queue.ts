@@ -5,6 +5,8 @@ import type { GuidanceConversation } from "./guidance";
 
 export interface GuidanceJob {
 	database: string; globalDatabase: string; bank: string; cwd: string; sessionId: string; sourceEntry: string;
+	/** Transcript path; once it is gone, the user deleted the session and nothing is stored. */
+	sessionFile?: string;
 	conversation: GuidanceConversation;
 }
 /** What the session hands the detached worker over fd 3. */

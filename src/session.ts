@@ -105,7 +105,7 @@ export default function memoryGuidance(pi: ExtensionAPI): void {
 			lastHandled = key;
 			dispatch(ctx.cwd, {
 				job: { database, globalDatabase: databasePath(Settings.instance, lookup("mnemopi.dbPath")), bank: status.retainBank,
-					cwd: ctx.cwd, sessionId, sourceEntry, conversation: messages },
+					cwd: ctx.cwd, sessionId, sourceEntry, sessionFile: ctx.sessionManager.getSessionFile(), conversation: messages },
 				attempts: 0, queueDir: queueDirectory(Settings.instance.getAgentDir()),
 			});
 		} catch (error) {

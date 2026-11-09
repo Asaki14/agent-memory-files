@@ -20,7 +20,7 @@ Before each request, the extension injects all active, non-sensitive global memo
 
 ## Distillation
 
-On session exit or switch, the current branch's user messages, completed assistant replies, and `ask` selections are passed through a credential filter and handed to a detached worker over a pipe. Subagent sessions are skipped: their user messages are the parent agent's task briefs, not the user's words. OMP's shutdown hook has a 2-second limit, so the worker outlives the host. The worker:
+On session exit or switch, the current branch's user messages, completed assistant replies, and `ask` selections are passed through a credential filter and handed to a detached worker over a pipe. Subagent sessions are skipped: their user messages are the parent agent's task briefs, not the user's words. Sessions removed with `/delete` are skipped too: the worker stores nothing if the transcript no longer exists when the model replies. OMP's shutdown hook has a 2-second limit, so the worker outlives the host. The worker:
 
 1. Asks the `memory` role for at most 8 candidates with verbatim evidence. Each must contain one durable fact, change a future action, and not be cheaply recoverable from files, configuration, tools, or existing instructions. Trials, current settings, tool adoption, configuration dumps, directory inventories, migrations, work reports, and assistant-only assertions do not qualify. Bundling a lasting preference with a setup snapshot does not make the snapshot admissible.
 2. Drops individual candidates with missing evidence, assistant-attributed preferences or decisions, raw messages, stand-alone dates, or sensitive fields.

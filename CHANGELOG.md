@@ -25,6 +25,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Subagent sessions are no longer distilled; their task briefs were being saved as user decisions.
 - Memories saved in `/memories` and distilled automatically are written under the bank's own session id, so OMP's `memory_edit` can update and forget them instead of reporting `not found`. Rows written by earlier versions need their `session_id` set to the bank name once.
 - An edit or deletion spanning several banks commits the bank holding the new text first. If a later bank fails to commit, `/memories` reports that the change applied only partly instead of offering to keep editing a stale draft; the old text remains as a separate memory to edit or delete.
+- Sessions removed with `/delete` no longer leave distilled memories; the worker stores nothing once the session's transcript is gone.
 
 ## [0.1.0] - 2026-10-27
 

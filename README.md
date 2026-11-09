@@ -25,7 +25,7 @@ Long-term memory for coding agents, kept in two plain Markdown files: one global
 | Project memory | Every session in that project | `AGENTS.memory.md` in the project root (Git worktrees share the main checkout's file), for durable project decisions and constraints the repository does not record. Limit 30 entries, 6000 characters. |
 | Session distillation | A main session ends | One background call to the `memory` model extracts evidenced, durable facts and writes each to the global or project file according to its bar; a full file takes no more. Subagent sessions and sessions removed with `/delete` are skipped; failed runs retry on the next start. |
 | Agent upkeep | During a session | The agent knows both files, their bars, and limits, and adds, edits, merges, deletes, or moves memories to their own project's file with its file tools. |
-| `/memories` | You want to see or change memory | Pick global or project and edit the whole file in the editor. |
+| `/memories` | You want to see or change memory | Pick global or project, then pick one memory to edit or delete. |
 | `/memories review` | You explicitly request cleanup | The current conversation's model trims, merges, and deletes entries, moves misplaced ones to global memory or their own project, and brings each file back within its limit. |
 
 ## Install
@@ -56,7 +56,7 @@ You can also tell your agent to install it:
 
 Each line starting with `- ` is one memory, written as `- [date] text`; headings and other text are free-form. Changes apply from the next session.
 
-Run `/memories`, pick global or project, and edit the file. Saving over the limit works but warns you to trim. Any editor works too. For model-assisted cleanup, select the model you want and run `/memories review`.
+Run `/memories`, pick global or project, then pick a memory. Edit its text and save; clear the text to delete it. Any editor works on the file too. For model-assisted cleanup, select the model you want and run `/memories review`.
 
 The interface is in English or Simplified Chinese. It follows `LC_ALL`, `LC_MESSAGES`, or `LANG`, and you can pin it in `~/.omp/agent/agent-memory-files.json`:
 

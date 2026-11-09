@@ -1,6 +1,6 @@
 import { Settings, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { t } from "./i18n";
-import { limitsOf, memoryScopes, MemoryConflictError, readMemory, usageOf, writeMemory, type MemoryScope } from "./memory-file";
+import { changeEntry, entriesOf, limitsOf, memoryScopes, MemoryConflictError, readMemory, splitDate, usageOf, type MemoryScope } from "./memory-file";
 import { reviewPrompt } from "./review";
 
 function refreshStatus(ctx: ExtensionContext): void {
@@ -9,28 +9,26 @@ function refreshStatus(ctx: ExtensionContext): void {
 	ctx.ui.setStatus("global-memory", t("status", { count }));
 }
 
-function label(scope: MemoryScope): string {
-	const usage = usageOf(readMemory(scope.path));
-	const limit = limitsOf(scope);
-	return t(scope.global ? "globalLabel" : "projectLabel", { entries: usage.entries, limit: limit.entries });
-}
-
-async function editFile(scope: MemoryScope, ctx: ExtensionCommandContext): Promise<void> {
-	const original = readMemory(scope.path);
-	const edited = await ctx.ui.editor(t("editTitle", { path: scope.path }), original);
-	if (edited === undefined || edited === original) return;
-	try {
-		writeMemory(scope, original, edited);
-	} catch (error) {
-		ctx.ui.notify(error instanceof MemoryConflictError ? t("conflict") : String(error), "error");
+/** Edit one memory; clearing the text deletes it after confirmation. */
+async function editEntry(scope: MemoryScope, entry: string, ctx: ExtensionCommandContext): Promise<void> {
+	const { text } = splitDate(entry);
+	let draft = text;
+	for (;;) {
+		const result = await ctx.ui.editor(t("editTitle"), draft);
+		if (result === undefined || result.trim() === text) return;
+		draft = result;
+		const remove = !draft.trim();
+		if (remove && !await ctx.ui.confirm(t("deleteTitle"), `${text.slice(0, 160)}\n\n${t("deleteBody")}`)) { draft = text; continue; }
+		try {
+			changeEntry(scope, entry, remove ? undefined : draft);
+		} catch (error) {
+			ctx.ui.notify(error instanceof MemoryConflictError ? t("conflict") : String(error), "error");
+			return;
+		}
+		refreshStatus(ctx);
+		ctx.ui.notify(t(remove ? "deleted" : "saved"), "info");
 		return;
 	}
-	refreshStatus(ctx);
-	const usage = usageOf(edited);
-	const limit = limitsOf(scope);
-	if (usage.entries > limit.entries || usage.chars > limit.chars) {
-		ctx.ui.notify(t("overLimit", { entries: usage.entries, chars: usage.chars, maxEntries: limit.entries, maxChars: limit.chars }), "warning");
-	} else ctx.ui.notify(t("saved"), "info");
 }
 
 async function openMemories(ctx: ExtensionCommandContext): Promise<void> {
@@ -38,11 +36,24 @@ async function openMemories(ctx: ExtensionCommandContext): Promise<void> {
 	await ctx.waitForIdle();
 	for (;;) {
 		const scopes = memoryScopes(Settings.instance.getAgentDir(), ctx.cwd);
-		const labels = scopes.map(label);
-		const selected = await ctx.ui.select(t("memories"), labels);
-		const scope = selected === undefined ? undefined : scopes[labels.indexOf(selected)];
+		const categories = scopes.map(scope => t(scope.global ? "globalLabel" : "projectLabel",
+			{ entries: usageOf(readMemory(scope.path)).entries, limit: limitsOf(scope).entries }));
+		const category = await ctx.ui.select(t("memories"), categories);
+		const scope = category === undefined ? undefined : scopes[categories.indexOf(category)];
 		if (!scope) return;
-		await editFile(scope, ctx);
+		for (;;) {
+			const entries = entriesOf(readMemory(scope.path));
+			if (!entries.length) { ctx.ui.notify(t(scope.global ? "noGlobal" : "noProject"), "info"); break; }
+			// Index prefixes keep labels unique when two memories share the same text.
+			const labels = entries.map((entry, index) => {
+				const { date, text } = splitDate(entry);
+				return `${index + 1}. ${text.replace(/\s+/g, " ")}${date ? `  (${date})` : ""}`;
+			});
+			const selected = await ctx.ui.select(t(scope.global ? "globalMemories" : "projectMemories"), labels);
+			if (selected === undefined) break;
+			const entry = entries[labels.indexOf(selected)];
+			if (entry !== undefined) await editEntry(scope, entry, ctx);
+		}
 	}
 }
 

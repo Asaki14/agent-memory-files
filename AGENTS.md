@@ -20,7 +20,7 @@ Long-term memory for coding agents as two Markdown files (global and per project
 ## Rules
 
 - UI text goes through `t()` in `src/i18n.ts`, with both locales updated together. Model prompts, the injected memory context, and log events stay English.
-- Plugin writes to memory files go through `writeMemory` or `appendMemories`, which take the file lock and write atomically.
+- Plugin writes to memory files go through `changeEntry` or `appendMemories`, which take the file lock and write atomically.
 - Never send credential-bearing text to a model or into the prompt; use `hasSecret()` from `src/policy.ts`.
 - Requests must never be blocked by memory failures: report once and continue.
 - Tests must not touch a real OMP agent directory or project.

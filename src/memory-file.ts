@@ -80,11 +80,24 @@ export class MemoryConflictError extends Error {
 	constructor() { super("The memory file changed since it was opened."); }
 }
 
-/** Replace the whole file (manual editing). Refuses if another writer changed it after `expected` was read. */
-export function writeMemory(scope: MemoryScope, expected: string, text: string): void {
+/** A "[YYYY-MM-DD] " prefix, when present, is the date the memory was written or last edited. */
+export function splitDate(entry: string): { date?: string; text: string } {
+	const match = /^\[(\d{4}-\d{2}-\d{2})\]\s*/.exec(entry);
+	return match ? { date: match[1], text: entry.slice(match[0].length) } : { text: entry };
+}
+
+/**
+ * Replace one memory line with `text` (re-dated) or delete it when `text` is undefined. Other lines are kept verbatim.
+ * Refuses if the entry is no longer in the file, e.g. another session edited or removed it.
+ */
+export function changeEntry(scope: MemoryScope, entry: string, text: string | undefined, date = new Date().toISOString().slice(0, 10)): void {
 	withLock(scope.path, () => {
-		if (readMemory(scope.path) !== expected) throw new MemoryConflictError();
-		writeAtomic(scope.path, text.endsWith("\n") || !text ? text : `${text}\n`);
+		const lines = readMemory(scope.path).split("\n");
+		const index = lines.findIndex(line => line.startsWith("- ") && line.slice(2).trim() === entry);
+		if (index < 0) throw new MemoryConflictError();
+		if (text === undefined) lines.splice(index, 1);
+		else lines[index] = `- [${date}] ${text.replace(/\s*\n\s*/g, " ").trim()}`;
+		writeAtomic(scope.path, lines.join("\n"));
 	});
 }
 

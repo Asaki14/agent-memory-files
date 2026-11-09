@@ -33,7 +33,7 @@ Worker results go to `~/.omp/logs/memory-guidance.log` as JSON lines: `memory_se
 
 ## Editing
 
-`/memories` opens the chosen file in OMP's editor. Saving replaces the file, unless the worker or another session changed it after it was opened; then nothing is overwritten. Saving over the limit is allowed with a warning.
+`/memories` lists the chosen file's memories one per row. Saving an edit replaces only that line and re-dates it; clearing the text deletes the line after confirmation. If the worker or another session changed or removed that memory after the list was shown, nothing is overwritten. Other lines, headings, and comments are kept verbatim.
 
 The worker and the editor take a lock next to the file (`AGENTS.memory.md.lock`) and write through a temporary file and rename, so concurrent sessions never interleave writes. A lock older than 30 seconds belongs to a dead process and is reclaimed. The agent's own file edits do not take the lock.
 

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appendMemories, entriesOf, LIMITS, MEMORY_FILE, memoryScopes, MemoryConflictError, readMemory, writeMemory } from "../src/memory-file";
+import { appendMemories, changeEntry, entriesOf, LIMITS, MEMORY_FILE, memoryScopes, MemoryConflictError, readMemory } from "../src/memory-file";
 import { reviewPrompt } from "../src/review";
 import { memoryContext } from "../src/memory-file";
 
@@ -40,21 +40,20 @@ test("The character budget also limits appends, and a new file starts with its h
 	expect(entriesOf(text).reduce((sum, entry) => sum + entry.length, 0)).toBeLessThanOrEqual(LIMITS.project.chars);
 });
 
-test("Manual saves refuse to overwrite a concurrent change, and a stale lock from a dead writer is reclaimed", () => {
+test("Editing one memory keeps the others, refuses a memory changed meanwhile, and reclaims a stale lock", () => {
 	const base = root();
 	const [, project] = memoryScopes(join(base, "agent"), base);
-	appendMemories(project, ["First"]);
-	const opened = readMemory(project.path);
-	appendMemories(project, ["Written by the worker meanwhile"]);
-	expect(() => writeMemory(project, opened, `${opened}- Manual\n`)).toThrow(MemoryConflictError);
-	expect(entriesOf(readMemory(project.path)).map(entry => entry.replace(/^\[[\d-]+\] /, ""))).toEqual(["First", "Written by the worker meanwhile"]);
+	appendMemories(project, ["First", "Second", "Third"]);
+	const [first, second, third] = entriesOf(readMemory(project.path));
+	changeEntry(project, second!, "Second,\nedited", "2026-01-02");
+	expect(entriesOf(readMemory(project.path))).toEqual([first!, "[2026-01-02] Second, edited", third!]);
+	expect(() => changeEntry(project, second!, "Stale edit")).toThrow(MemoryConflictError);
 	const lock = `${project.path}.lock`;
 	mkdirSync(lock);
 	const old = (Date.now() - 60_000) / 1000;
 	utimesSync(lock, old, old);
-	const current = readMemory(project.path);
-	writeMemory(project, current, `${current}- Manual`);
-	expect(readMemory(project.path).endsWith("- Manual\n")).toBe(true);
+	changeEntry(project, first!, undefined);
+	expect(entriesOf(readMemory(project.path))).toEqual(["[2026-01-02] Second, edited", third!]);
 });
 
 test("Git worktrees share the main checkout's project file", () => {

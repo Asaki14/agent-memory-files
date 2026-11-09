@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Renamed from omp-mnemopi-memory to agent-memory-files. The locale config file is now `~/.omp/agent/agent-memory-files.json`.
 - Memory moved from the Mnemopi backend to two Markdown files: `~/.omp/agent/AGENTS.memory.md` (global) and `AGENTS.memory.md` in each project root. Both are loaded in full at session start. Set `memory.backend` to `off`; the Mnemopi dependency, global injection, recall de-duplication, and transcript archiving are removed.
 - Global and project memory have separate admission bars and limits (20 entries / 4000 characters global, 30 entries / 6000 characters per project). Distillation stops writing to a full file.
-- `/memories` edits a whole file; `/memories review` edits files with the agent's tools and can move memories into another project's file.
+- `/memories` lists memories one by one for editing or deletion; `/memories review` edits files with the agent's tools and can move memories into another project's file.
 
 ### Added
 - Install as an OMP plugin with `omp plugin install github:Asaki14/agent-memory-files`.

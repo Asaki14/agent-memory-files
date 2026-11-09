@@ -7,6 +7,7 @@ import { Mnemopi } from "@oh-my-pi/pi-mnemopi/core";
 import { isArchiveSource } from "../src/policy";
 import { readGlobalMemories } from "../src/snapshot";
 import { deleteEntry, listEntries, listProjectEntries, listScopes, liveProjectEdits, MemoryConflictError, saveEntry, type MemoryScope } from "../src/store";
+import { storeGuidance } from "../src/automatic";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); });
@@ -83,6 +84,19 @@ test("Saving replaces the old source and facts; restoring the old text remains v
 	const restored = saveEntry(f.scope, listEntries(f.scope)[0], "Legacy preference");
 	expect(restored).not.toBe(f.id);
 	expect(listEntries(f.scope).map(entry => entry.content)).toEqual(["Legacy preference"]);
+});
+
+test("Edited memories stay updatable and forgettable through OMP's bank-scoped memory_edit", () => {
+	const f = fixture();
+	const id = saveEntry(f.scope, listEntries(f.scope)[0], "Updated preference")!;
+	// OMP opens each bank with sessionId equal to the bank name, and memory_edit filters by it.
+	const omp = new Mnemopi({ dbPath: f.path, bank: "default", sessionId: "default", channelId: "default", llm: false, embeddings: false, reconcile: false });
+	cleanups.push(() => omp.close());
+	expect(omp.update(id, "Edited by agent")).toBe(true);
+	expect(omp.forget(id)).toBe(true);
+	expect(storeGuidance(f.path, "default", "session", "entry", f.root, [{ kind: "preference", content: "Distilled preference" }])).toBe(1);
+	const guidance = omp.db.query<{ id: string }, [string]>("SELECT id FROM working_memory WHERE content=?").get("Distilled preference")!.id;
+	expect(omp.update(guidance, "Edited distilled preference")).toBe(true);
 });
 
 test("Deleting a memory removes its source and facts globally without affecting other memories", () => {

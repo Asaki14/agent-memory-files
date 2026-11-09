@@ -1,5 +1,4 @@
 import { Database } from "bun:sqlite";
-import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -226,7 +225,8 @@ function changeEntry(scope: MemoryScope, entry: MemoryEntry, content: string | u
 		let replacement: string | undefined;
 		if (content !== undefined) {
 			const source = entry.rows[0];
-			replacement = owner(source, `memory-editor-${randomUUID()}`).remember(content, {
+			// omp's memory_edit only updates/forgets rows whose session_id equals the bank name.
+			replacement = owner(source, source.location.bank).remember(content, {
 				source: EDIT_SOURCE, importance: Math.max(...entry.rows.map(row => row.importance)), scope: "bank",
 				extract: false, extractEntities: false, veracity: "stated",
 				metadata: { ...metadata(source.metadata_json),

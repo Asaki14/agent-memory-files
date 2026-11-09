@@ -3,8 +3,9 @@ import type { GuidanceFact } from "./guidance";
 
 /** Persist extracted facts only; the conversation never enters this storage API. */
 export function storeGuidance(database: string, bank: string, sessionId: string, sourceEntry: string, cwd: string, facts: GuidanceFact[]): number {
+	// session_id must equal the bank name, or omp's memory_edit cannot update or forget the row.
 	const memory = new Mnemopi({ dbPath: database, bank, channelId: bank,
-		sessionId: `omp-guidance-${sourceEntry}`, llm: false, embeddings: false, reconcile: false });
+		sessionId: bank, llm: false, embeddings: false, reconcile: false });
 	try {
 		return memory.db.transaction(() => {
 			let stored = 0;

@@ -23,6 +23,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Fixed
 - On a fresh install, reading memories before Mnemopi created its database no longer raises `unable to open database file`.
 - Subagent sessions are no longer distilled; their task briefs were being saved as user decisions.
+- Memories saved in `/memories` and distilled automatically are written under the bank's own session id, so OMP's `memory_edit` can update and forget them instead of reporting `not found`. Rows written by earlier versions need their `session_id` set to the bank name once.
 
 ## [0.1.0] - 2026-10-27
 

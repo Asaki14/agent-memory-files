@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -7,7 +6,7 @@ import { dirname, join } from "node:path";
 import { Mnemopi } from "@oh-my-pi/pi-mnemopi/core";
 import { isArchiveSource } from "../src/policy";
 import { readGlobalMemories } from "../src/snapshot";
-import { deleteEntry, listEntries, listProjectEntries, listScopes, liveProjectEdits, MemoryConflictError, PartialCommitError, saveEntry, type MemoryScope } from "../src/store";
+import { deleteEntry, listEntries, listProjectEntries, listScopes, liveProjectEdits, MemoryConflictError, moveEntry, saveEntry, type MemoryScope } from "../src/store";
 import { storeGuidance } from "../src/automatic";
 
 const cleanups: Array<() => void> = [];
@@ -154,7 +153,7 @@ test("Returns only global and current-project scopes, excludes unrelated project
 	expect(readGlobalMemories(global.path).content).not.toContain("Alpha current rule");
 });
 
-test("Git worktrees share a project identity and unify duplicate memories for listing, editing, and deletion", () => {
+test("Git worktrees share a project identity; each bank's copy is a separate entry", () => {
 	const global = fixture();
 	const main = join(global.root, "app");
 	const tree = join(global.root, "tree", "app");
@@ -173,66 +172,51 @@ test("Git worktrees share a project identity and unify duplicate memories for li
 	expect(scope.root).toBe(main);
 	expect(new Set(scope.banks.map(bank => bank.path))).toEqual(new Set([a.path, b.path]));
 	const entries = listEntries(scope);
-	expect(entries.map(entry => entry.content)).toEqual(["Legacy preference"]);
-	expect(entries[0].rows).toHaveLength(2);
+	expect(entries.map(entry => entry.content)).toEqual(["Legacy preference", "Legacy preference"]);
 	const id = saveEntry(scope, entries[0], "Unified project rule");
-	expect(listEntries(scope).map(entry => entry.content)).toEqual(["Unified project rule"]);
+	expect(listEntries(scope).map(entry => entry.content).sort()).toEqual(["Legacy preference", "Unified project rule"]);
 	expect(liveProjectEdits(global.path, tree)).toEqual([{ id, content: "Unified project rule" }]);
-	deleteEntry(scope, listEntries(scope)[0]);
+	for (const entry of listEntries(scope)) deleteEntry(scope, entry);
 	expect(listEntries(scope)).toEqual([]);
 	expect(liveProjectEdits(global.path, main)).toEqual([]);
 	expect(readGlobalMemories(global.path).content).toContain("Legacy preference");
 });
 
-test("Project listings merge shared memories, exclude other projects, and preserve global scope on shared edits", () => {
+test("Project listings show global then project entries, exclude other projects, and edit only the chosen copy", () => {
 	const global = fixture();
 	const project = fixture(join(global.root, "banks", "alpha", "mnemopi.db"), "/test/alpha");
 	const other = fixture(join(global.root, "banks", "beta", "mnemopi.db"), "/test/beta");
 	project.memory.remember("Alpha release decision", { scope: "bank", extract: false, extractEntities: false, metadata: { cwd: "/test/alpha" } });
 	other.memory.remember("Beta private decision", { scope: "bank", extract: false, extractEntities: false, metadata: { cwd: "/test/beta" } });
 	const entries = listProjectEntries(global.path, "/test/alpha");
-	expect(entries.map(item => item.entry.content)).toEqual(["Legacy preference", "Alpha release decision"]);
-	const shared = entries[0];
-	expect(shared.scope.global).toBe(true);
-	expect(shared.entry.rows.map(row => row.location.path).sort()).toEqual([global.path, project.path].sort());
-	saveEntry(shared.scope, shared.entry, "Updated shared preference");
-	expect(listProjectEntries(global.path, "/test/alpha").map(item => item.entry.content)).toEqual(["Updated shared preference", "Alpha release decision"]);
+	expect(entries.map(item => [item.scope.global, item.entry.content]).sort()).toEqual(
+		[[false, "Alpha release decision"], [false, "Legacy preference"], [true, "Legacy preference"]]);
+	expect(entries[0].scope.global).toBe(true);
+	saveEntry(entries[0].scope, entries[0].entry, "Updated shared preference");
+	expect(listProjectEntries(global.path, "/test/alpha").map(item => item.entry.content).sort())
+		.toEqual(["Alpha release decision", "Legacy preference", "Updated shared preference"]);
 	expect(listProjectEntries(global.path, "/test/beta").map(item => item.entry.content)).toContain("Updated shared preference");
-	expect(listEntries(project.scope).map(entry => entry.content)).not.toContain("Legacy preference");
 	deleteEntry(global.scope, listEntries(global.scope)[0]);
-	expect(listProjectEntries(global.path, "/test/alpha").map(item => item.entry.content)).toEqual(["Alpha release decision"]);
+	expect(listProjectEntries(global.path, "/test/alpha").map(item => item.entry.content).sort()).toEqual(["Alpha release decision", "Legacy preference"]);
 });
 
-test("A failed second-bank commit leaves both texts visible, and retrying the stale copy converges", () => {
+test("Moving a memory to another project or to global keeps it editable there and removes it here", () => {
 	const global = fixture();
-	const project = fixture(join(global.root, "banks", "alpha", "mnemopi.db"), "/test/alpha");
-	const contents = () => listProjectEntries(global.path, "/test/alpha").map(item => item.entry.content).sort();
-	const failSecondCommit = (action: () => void) => {
-		const exec = Database.prototype.exec;
-		let commits = 0;
-		Database.prototype.exec = function (this: Database, sql: string, ...rest: unknown[]) {
-			if (sql === "COMMIT" && ++commits === 2) throw new Error("injected commit failure");
-			return (exec as (sql: string, ...rest: unknown[]) => unknown).call(this, sql, ...rest);
-		} as typeof exec;
-		try { expect(action).toThrow(PartialCommitError); } finally { Database.prototype.exec = exec; }
-	};
-	const shared = () => listProjectEntries(global.path, "/test/alpha").find(item => item.entry.content === "Legacy preference")!;
-	expect(shared().entry.rows).toHaveLength(2);
-
-	// The replacement's bank commits first, so a later failure never loses the new text or the old one.
-	failSecondCommit(() => saveEntry(shared().scope, shared().entry, "Updated shared preference"));
-	expect(contents()).toEqual(["Legacy preference", "Updated shared preference"]);
-	expect(shared().entry.rows).toHaveLength(1);
-	saveEntry(shared().scope, shared().entry, "Updated shared preference");
-	expect(contents()).toEqual(["Updated shared preference"]);
-
-	const updated = listProjectEntries(global.path, "/test/alpha")[0];
-	project.memory.remember("Updated shared preference", { scope: "bank", extract: false, extractEntities: false, metadata: { cwd: "/test/alpha" } });
-	const both = listProjectEntries(global.path, "/test/alpha")[0];
-	expect(both.entry.rows.length).toBeGreaterThan(updated.entry.rows.length);
-	failSecondCommit(() => deleteEntry(both.scope, both.entry));
-	expect(contents()).toEqual(["Updated shared preference"]);
-	const rest = listProjectEntries(global.path, "/test/alpha")[0];
-	deleteEntry(rest.scope, rest.entry);
-	expect(contents()).toEqual([]);
+	const alpha = fixture(join(global.root, "banks", "alpha", "mnemopi.db"), "/test/alpha");
+	fixture(join(global.root, "banks", "beta", "mnemopi.db"), "/test/beta");
+	const misfiled = alpha.memory.remember("Beta deploy rule", { scope: "bank", extract: false, extractEntities: false, metadata: { cwd: "/test/alpha" } });
+	const [, alphaScope] = listScopes(global.path, "/test/alpha");
+	const [globalScope, betaScope] = listScopes(global.path, "/test/beta");
+	const entry = listEntries(alphaScope).find(item => item.rows[0].id === misfiled)!;
+	const moved = moveEntry(alphaScope, entry, betaScope);
+	expect(listEntries(alphaScope).map(item => item.content)).not.toContain("Beta deploy rule");
+	expect(listEntries(betaScope).map(item => item.content)).toContain("Beta deploy rule");
+	const omp = new Mnemopi({ dbPath: betaScope.banks[0].path, bank: "beta", sessionId: "beta", channelId: "beta", llm: false, embeddings: false, reconcile: false });
+	cleanups.push(() => omp.close());
+	expect(omp.update(moved, "Beta deploy rule, revised")).toBe(true);
+	const promoted = moveEntry(alphaScope, listEntries(alphaScope).find(item => item.content === "Legacy preference")!, globalScope);
+	expect(listEntries(globalScope).flatMap(item => item.rows.map(row => row.id))).toContain(promoted);
+	alpha.memory.remember("Alpha-only rule", { scope: "bank", extract: false, extractEntities: false, metadata: { cwd: "/test/alpha" } });
+	expect(() => moveEntry(alphaScope, listEntries(alphaScope)[0], listScopes(global.path, "/test/unknown")[1])).toThrow("/test/unknown");
+	expect(listEntries(alphaScope).map(item => item.content)).toEqual(["Alpha-only rule"]);
 });

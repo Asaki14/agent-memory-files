@@ -10,6 +10,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - GitHub Actions workflow running the test suite.
 - Chinese README, `llms.txt` for agent-driven installs, and an agent guide in `AGENTS.md`.
 - `/memories review` starts an explicit review and cleanup using the current conversation's model and tools, with argument completion.
+- `/memories review` can move a memory to global memory or to the project it belongs to, when that project already has a memory bank.
 
 ### Changed
 - Sources moved to `src/` and tests to `test/`; detailed behavior moved to `docs/how-it-works.md`.
@@ -24,7 +25,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - On a fresh install, reading memories before Mnemopi created its database no longer raises `unable to open database file`.
 - Subagent sessions are no longer distilled; their task briefs were being saved as user decisions.
 - Memories saved in `/memories` and distilled automatically are written under the bank's own session id, so OMP's `memory_edit` can update and forget them instead of reporting `not found`. Rows written by earlier versions need their `session_id` set to the bank name once.
-- An edit or deletion spanning several banks commits the bank holding the new text first. If a later bank fails to commit, `/memories` reports that the change applied only partly instead of offering to keep editing a stale draft; the old text remains as a separate memory to edit or delete.
+- Each memory entry now lives in one bank. Identical text in global and project memory is listed separately instead of being edited together, so an edit or deletion can no longer apply to only some banks.
 - Sessions removed with `/delete` no longer leave distilled memories; the worker stores nothing once the session's transcript is gone.
 
 ## [0.1.0] - 2026-10-27

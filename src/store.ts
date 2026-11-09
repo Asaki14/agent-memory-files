@@ -34,10 +34,6 @@ export interface MemoryEntry { content: string; rows: MemoryRow[] }
 export class MemoryConflictError extends Error {
 	constructor() { super(t("conflict")); }
 }
-/** SQLite cannot commit separate database files atomically; some banks already hold the change. */
-export class PartialCommitError extends Error {
-	constructor(cause: unknown) { super(t("partialCommit"), { cause }); }
-}
 function metadata(text: string | null): Metadata {
 	if (!text) return {};
 	try {
@@ -159,9 +155,11 @@ export function listEntries(scope: MemoryScope, source?: string): MemoryEntry[] 
 					.replace(/^\[coding-agent-retain\]\s*/, "").trim();
 				if (!content) continue;
 				const source = { ...row, location: bank };
-				const prior = grouped.get(content);
+				// One entry lives in one bank; identical text elsewhere is a separate entry to merge explicitly.
+				const key = `${bank.path}\n${content}`;
+				const prior = grouped.get(key);
 				if (prior) prior.rows.push(source);
-				else grouped.set(content, { content, rows: [source] });
+				else grouped.set(key, { content, rows: [source] });
 			}
 		} finally { db.close(); }
 	}
@@ -187,50 +185,36 @@ export function retiredGuidance(scopes: MemoryScope[]): string[] {
 	return [...retired];
 }
 
-/** Memories available here: shared preferences plus this project's entries, without duplicate text. */
+/** Memories available here: shared preferences, then this project's entries. */
 export function listProjectEntries(globalPath: string, cwd: string): Array<{ scope: MemoryScope; entry: MemoryEntry }> {
-	const grouped = new Map<string, { scope: MemoryScope; entry: MemoryEntry }>();
-	for (const scope of listScopes(globalPath, cwd)) {
-		for (const entry of listEntries(scope)) {
-			const prior = grouped.get(entry.content);
-			if (prior) prior.entry.rows.push(...entry.rows);
-			else grouped.set(entry.content, { scope, entry });
-		}
-	}
-	return [...grouped.values()];
+	return listScopes(globalPath, cwd).flatMap(scope => listEntries(scope).map(entry => ({ scope, entry })));
 }
 
 function changeEntry(scope: MemoryScope, entry: MemoryEntry, content: string | undefined): string | undefined {
-	const connections = new Map<string, Database>();
-	const owners = new Map<Database, Map<string, Mnemopi>>();
-	const owner = (row: MemoryRow, sessionId: string): Mnemopi => {
-		const db = connections.get(row.location.path)!;
-		let instances = owners.get(db);
-		if (!instances) { instances = new Map(); owners.set(db, instances); }
-		let memory = instances.get(sessionId);
+	const bank = entry.rows[0].location;
+	const db = new Database(bank.path, { strict: true });
+	const owners = new Map<string, Mnemopi>();
+	const owner = (sessionId: string): Mnemopi => {
+		let memory = owners.get(sessionId);
 		if (!memory) {
-			memory = new Mnemopi({ db, dbPath: row.location.path, bank: row.location.bank, sessionId, channelId: row.location.bank,
+			memory = new Mnemopi({ db, dbPath: bank.path, bank: bank.bank, sessionId, channelId: bank.bank,
 				llm: false, embeddings: false, reconcile: false });
-			instances.set(sessionId, memory);
+			owners.set(sessionId, memory);
 		}
 		return memory;
 	};
 	try {
+		db.exec("BEGIN IMMEDIATE");
 		for (const row of entry.rows) {
-			if (!connections.has(row.location.path)) {
-				const db = new Database(row.location.path, { strict: true });
-				connections.set(row.location.path, db);
-				db.exec("BEGIN IMMEDIATE");
-			}
 			const table = row.store === "working" ? "working_memory" : "episodic_memory";
-			const current = connections.get(row.location.path)!.query<StoredRow, [string]>(`SELECT * FROM ${table} WHERE id=?`).get(row.id);
+			const current = db.query<StoredRow, [string]>(`SELECT * FROM ${table} WHERE id=?`).get(row.id);
 			if (!current || !active(current) || current.content !== row.content) throw new MemoryConflictError();
 		}
 		let replacement: string | undefined;
 		if (content !== undefined) {
 			const source = entry.rows[0];
-			// omp's memory_edit only updates/forgets rows whose session_id equals the bank name.
-			replacement = owner(source, source.location.bank).remember(content, {
+			// OMP's memory_edit only updates or forgets rows whose session id is the bank name.
+			replacement = owner(bank.bank).remember(content, {
 				source: EDIT_SOURCE, importance: Math.max(...entry.rows.map(row => row.importance)), scope: "bank",
 				extract: false, extractEntities: false, veracity: "stated",
 				metadata: { ...metadata(source.metadata_json),
@@ -238,24 +222,16 @@ function changeEntry(scope: MemoryScope, entry: MemoryEntry, content: string | u
 			});
 		}
 		for (const row of entry.rows) {
-			if (!owner(row, row.session_id ?? row.location.bank).beam.invalidate(row.id, replacement ?? null)) throw new MemoryConflictError();
+			if (!owner(row.session_id ?? bank.bank).beam.invalidate(row.id, replacement ?? null)) throw new MemoryConflictError();
 		}
-		// Commit the replacement's bank (rows[0], opened first) before the rest. If a later bank fails, the new
-		// text and the stale copy both stay visible, and editing or deleting the stale copy completes the change.
-		let committed = 0;
-		try {
-			for (const db of connections.values()) { db.exec("COMMIT"); committed++; }
-		} catch (error) {
-			if (committed > 0) throw new PartialCommitError(error);
-			throw error;
-		}
+		db.exec("COMMIT");
 		return replacement;
 	} catch (error) {
-		for (const db of connections.values()) if (db.inTransaction) db.exec("ROLLBACK");
+		if (db.inTransaction) db.exec("ROLLBACK");
 		throw error;
 	} finally {
-		for (const instances of owners.values()) for (const memory of instances.values()) memory.close();
-		for (const db of connections.values()) db.close();
+		for (const memory of owners.values()) memory.close();
+		db.close();
 	}
 }
 export function saveEntry(scope: MemoryScope, entry: MemoryEntry, content: string): string {
@@ -265,6 +241,29 @@ export function saveEntry(scope: MemoryScope, entry: MemoryEntry, content: strin
 }
 export function deleteEntry(scope: MemoryScope, entry: MemoryEntry): void {
 	changeEntry(scope, entry, undefined);
+}
+/**
+ * Move an entry to another scope (global, or a project from listScopes(globalPath, projectCwd)[1]). The copy is
+ * written first, so a failure afterwards leaves a duplicate rather than losing the memory.
+ */
+export function moveEntry(from: MemoryScope, entry: MemoryEntry, to: MemoryScope): string {
+	const bank = to.banks[0];
+	if (!bank) throw new Error(t("noTargetBank", { root: to.root }));
+	const source = entry.rows[0];
+	// OMP's memory_edit only updates or forgets rows whose session id is the bank name.
+	const memory = new Mnemopi({ dbPath: bank.path, bank: bank.bank, sessionId: bank.bank, channelId: bank.bank,
+		llm: false, embeddings: false, reconcile: false });
+	let id: string;
+	try {
+		id = memory.remember(entry.content, {
+			source: source.source ?? EDIT_SOURCE, importance: Math.max(...entry.rows.map(row => row.importance)), scope: "bank",
+			extract: false, extractEntities: false, veracity: "stated",
+			metadata: { ...metadata(source.metadata_json), ...(to.global ? {} : { cwd: to.root }),
+				memory_editor: { edited_at: Date.now(), projectRoot: to.global ? null : to.root, supersedes: entry.rows.map(row => row.id) } },
+		});
+	} finally { memory.close(); }
+	deleteEntry(from, entry);
+	return id;
 }
 
 /** Edited project rules remain current across sessions and worktrees; unrelated projects stay isolated. */

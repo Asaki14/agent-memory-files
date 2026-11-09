@@ -3,7 +3,7 @@ import { cfgMemoryBackend } from "@oh-my-pi/pi-coding-agent/memory-backend/setti
 import { lookup } from "@oh-my-pi/pi-coding-agent/config/registry";
 import { databasePath } from "./config";
 import { t } from "./i18n";
-import { deleteEntry, listEntries, listScopes, liveProjectEdits, saveEntry, type MemoryEntry, type MemoryScope } from "./store";
+import { deleteEntry, listEntries, listScopes, liveProjectEdits, PartialCommitError, saveEntry, type MemoryEntry, type MemoryScope } from "./store";
 import { refreshMemoryStatus } from "./status";
 import { reviewPrompt } from "./review";
 
@@ -35,6 +35,7 @@ async function editMemory(scope: MemoryScope, entry: MemoryEntry, ctx: Extension
 			return;
 		} catch (error) {
 			ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+			if (error instanceof PartialCommitError) { refreshStatus(ctx); return; }
 			if (await ctx.ui.select(t("draftNotSaved"), [t("keepEditing"), t("discardDraft")]) !== t("keepEditing")) return;
 		}
 	}

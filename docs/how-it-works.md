@@ -51,4 +51,6 @@ A Git project is identified by its common repository: the main checkout, subdire
 
 All writes go through the official Mnemopi API with models, embeddings, and automatic fact extraction disabled. New records use the bank name as their session id, matching OMP, whose `memory_edit` only updates or forgets rows in its own session. Saving creates a new record and invalidates the old one; deleting invalidates it. Facts derived from an invalidated record are retired with it. Identical text across banks in the same scope is updated together. Each write checks that the record is still active and unchanged; if another session modified it, the write is refused.
 
+SQLite cannot commit separate database files atomically. When identical text spans several banks, the bank receiving the new record commits first. If a later bank fails, no text is lost: the new record and the stale copy both appear, `/memories` says the change applied only partly, and editing or deleting the stale copy finishes it.
+
 Global injection and archiving read Mnemopi tables directly. Required columns are verified on each read, so a schema change surfaces as a clear read error instead of silently wrong data. After upgrading OMP or Mnemopi, run the tests.

@@ -34,6 +34,10 @@ export interface MemoryEntry { content: string; rows: MemoryRow[] }
 export class MemoryConflictError extends Error {
 	constructor() { super(t("conflict")); }
 }
+/** SQLite cannot commit separate database files atomically; some banks already hold the change. */
+export class PartialCommitError extends Error {
+	constructor(cause: unknown) { super(t("partialCommit"), { cause }); }
+}
 function metadata(text: string | null): Metadata {
 	if (!text) return {};
 	try {
@@ -236,7 +240,15 @@ function changeEntry(scope: MemoryScope, entry: MemoryEntry, content: string | u
 		for (const row of entry.rows) {
 			if (!owner(row, row.session_id ?? row.location.bank).beam.invalidate(row.id, replacement ?? null)) throw new MemoryConflictError();
 		}
-		for (const db of connections.values()) db.exec("COMMIT");
+		// Commit the replacement's bank (rows[0], opened first) before the rest. If a later bank fails, the new
+		// text and the stale copy both stay visible, and editing or deleting the stale copy completes the change.
+		let committed = 0;
+		try {
+			for (const db of connections.values()) { db.exec("COMMIT"); committed++; }
+		} catch (error) {
+			if (committed > 0) throw new PartialCommitError(error);
+			throw error;
+		}
 		return replacement;
 	} catch (error) {
 		for (const db of connections.values()) if (db.inTransaction) db.exec("ROLLBACK");

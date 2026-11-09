@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -6,7 +7,7 @@ import { dirname, join } from "node:path";
 import { Mnemopi } from "@oh-my-pi/pi-mnemopi/core";
 import { isArchiveSource } from "../src/policy";
 import { readGlobalMemories } from "../src/snapshot";
-import { deleteEntry, listEntries, listProjectEntries, listScopes, liveProjectEdits, MemoryConflictError, saveEntry, type MemoryScope } from "../src/store";
+import { deleteEntry, listEntries, listProjectEntries, listScopes, liveProjectEdits, MemoryConflictError, PartialCommitError, saveEntry, type MemoryScope } from "../src/store";
 import { storeGuidance } from "../src/automatic";
 
 const cleanups: Array<() => void> = [];
@@ -200,4 +201,38 @@ test("Project listings merge shared memories, exclude other projects, and preser
 	expect(listEntries(project.scope).map(entry => entry.content)).not.toContain("Legacy preference");
 	deleteEntry(global.scope, listEntries(global.scope)[0]);
 	expect(listProjectEntries(global.path, "/test/alpha").map(item => item.entry.content)).toEqual(["Alpha release decision"]);
+});
+
+test("A failed second-bank commit leaves both texts visible, and retrying the stale copy converges", () => {
+	const global = fixture();
+	const project = fixture(join(global.root, "banks", "alpha", "mnemopi.db"), "/test/alpha");
+	const contents = () => listProjectEntries(global.path, "/test/alpha").map(item => item.entry.content).sort();
+	const failSecondCommit = (action: () => void) => {
+		const exec = Database.prototype.exec;
+		let commits = 0;
+		Database.prototype.exec = function (this: Database, sql: string, ...rest: unknown[]) {
+			if (sql === "COMMIT" && ++commits === 2) throw new Error("injected commit failure");
+			return (exec as (sql: string, ...rest: unknown[]) => unknown).call(this, sql, ...rest);
+		} as typeof exec;
+		try { expect(action).toThrow(PartialCommitError); } finally { Database.prototype.exec = exec; }
+	};
+	const shared = () => listProjectEntries(global.path, "/test/alpha").find(item => item.entry.content === "Legacy preference")!;
+	expect(shared().entry.rows).toHaveLength(2);
+
+	// The replacement's bank commits first, so a later failure never loses the new text or the old one.
+	failSecondCommit(() => saveEntry(shared().scope, shared().entry, "Updated shared preference"));
+	expect(contents()).toEqual(["Legacy preference", "Updated shared preference"]);
+	expect(shared().entry.rows).toHaveLength(1);
+	saveEntry(shared().scope, shared().entry, "Updated shared preference");
+	expect(contents()).toEqual(["Updated shared preference"]);
+
+	const updated = listProjectEntries(global.path, "/test/alpha")[0];
+	project.memory.remember("Updated shared preference", { scope: "bank", extract: false, extractEntities: false, metadata: { cwd: "/test/alpha" } });
+	const both = listProjectEntries(global.path, "/test/alpha")[0];
+	expect(both.entry.rows.length).toBeGreaterThan(updated.entry.rows.length);
+	failSecondCommit(() => deleteEntry(both.scope, both.entry));
+	expect(contents()).toEqual(["Updated shared preference"]);
+	const rest = listProjectEntries(global.path, "/test/alpha")[0];
+	deleteEntry(rest.scope, rest.entry);
+	expect(contents()).toEqual([]);
 });

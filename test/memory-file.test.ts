@@ -84,6 +84,7 @@ test("Session context and review include both files but never credential lines o
 	const context = memoryContext(agent, project);
 	expect(context).toContain("The user prefers concise answers.");
 	expect(context).toContain("Releases need manual approval.");
+	expect(context).not.toContain("hunter2");
 	expect(context).not.toContain("Unrelated private constraint.");
 	const prompt = reviewPrompt(agent, project)!;
 	expect(prompt).toContain("Releases need manual approval.");

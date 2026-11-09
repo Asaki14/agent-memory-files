@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { hasSecret } from "./policy";
 
 /** Name of the memory file in the agent directory (global) and in each project root (project). */
 export const MEMORY_FILE = "AGENTS.memory.md";
@@ -124,7 +125,8 @@ export function memoryContext(agentDir: string, cwd: string): string {
 		return `- ${scope.global ? "Global" : "Project"}: ${scope.path} (limit ${limit.entries} entries, ${limit.chars} characters). ${bar}`;
 	};
 	const block = (tag: string, scope: MemoryScope) => {
-		const text = readMemory(scope.path).trim();
+		// Credential-bearing lines stay on disk but never reach the model.
+		const text = readMemory(scope.path).split("\n").filter(line => !hasSecret(line)).join("\n").trim();
 		return text ? [`<${tag} path="${scope.path}">`, text, `</${tag}>`] : [];
 	};
 	return [

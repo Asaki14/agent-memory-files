@@ -5,6 +5,7 @@ import { databasePath } from "./config";
 import { t } from "./i18n";
 import { deleteEntry, listEntries, listScopes, liveProjectEdits, saveEntry, type MemoryEntry, type MemoryScope } from "./store";
 import { refreshMemoryStatus } from "./status";
+import { reviewPrompt } from "./review";
 
 const LIVE_TYPE = "memory-editor-live-project";
 function currentDatabasePath(): string {
@@ -72,7 +73,26 @@ async function openMemories(_args: string, ctx: ExtensionCommandContext): Promis
 export default function memoryEditor(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => { refreshStatus(ctx); });
 	pi.on("input", (_event, ctx) => { refreshStatus(ctx); return { action: "continue" as const }; });
-	pi.registerCommand("memories", { description: t("commandDescription"), handler: openMemories });
+	pi.registerCommand("memories", {
+		description: t("commandDescription"),
+		getArgumentCompletions: prefix => "review".startsWith(prefix)
+			? [{ value: "review", label: `review: ${t("reviewDescription")}` }] : null,
+		handler: async (args, ctx) => {
+			if (!args.trim()) return openMemories(args, ctx);
+			if (args.trim() !== "review") { ctx.ui.notify(t("commandUsage"), "warning"); return; }
+			if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi") {
+				ctx.ui.notify(t("notMnemopi"), "error"); return;
+			}
+			await ctx.waitForIdle();
+			try {
+				const prompt = reviewPrompt(currentDatabasePath(), ctx.cwd);
+				if (!prompt) { ctx.ui.notify(t("noReviewMemories"), "info"); return; }
+				pi.sendMessage({ customType: "memory-review", content: prompt, display: true }, { triggerTurn: true });
+			} catch (error) {
+				ctx.ui.notify(t("cannotOpen", { error: error instanceof Error ? error.message : String(error) }), "error");
+			}
+		},
+	});
 	pi.on("context", async (event, ctx) => {
 		if (cfgMemoryBackend.get(Settings.instance) !== "mnemopi") return;
 		const messages = event.messages.filter(message => message.role !== "custom" || message.customType !== LIVE_TYPE);

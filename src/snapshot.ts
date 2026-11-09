@@ -117,20 +117,17 @@ const normalize = (text: string) => text.replace(/^\[[\w-]+\]\s*/, "").replace(/
 /** Truncated recall items shorter than this are too ambiguous to attribute to a global memory. */
 const MIN_TRUNCATED_MATCH = 20;
 
-/**
- * Built-in Mnemopi recall also pulls from the global bank, which `<global_memories>` already injects in full.
- * Remove those recalled items from `<memories>` blocks; project recalls stay. Returns undefined when nothing changed.
- */
+/** Remove fully injected globals from built-in recall; project and ambiguous items stay. */
+
 export function withoutRecalledGlobals(parts: readonly string[], globals: readonly string[]): string[] | undefined {
 	const known = globals.map(normalize);
 	const isGlobal = (item: string): boolean => {
 		const body = item.slice(2).replace(/ \[[\w-]+\](?: \(\d{4}-\d{2}-\d{2}\))?$/, "");
 		const truncated = body.endsWith("…");
 		const text = normalize(truncated ? body.slice(0, -1) : body);
-		if (!text) return false;
-		return truncated
+		return !!text && (truncated
 			? text.length >= MIN_TRUNCATED_MATCH && known.some(memory => memory.startsWith(text))
-			: known.includes(text);
+			: known.includes(text));
 	};
 	let changed = false;
 	const next = parts.map(part => part.replace(/<memories>\n([\s\S]*?)\n<\/memories>/g, (block, body: string) => {

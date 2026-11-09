@@ -22,8 +22,9 @@ An extension for [oh-my-pi (OMP)](https://github.com/can1357/oh-my-pi) on top of
 | Feature | When | What it does |
 | :--- | :--- | :--- |
 | `/memories` | You want to see or fix what the agent remembers | Browse global and current-project memories, edit them in place, or delete them. |
-| Global memories | Every request | Injects your global memories with their dates, your own edits first, trimmed to the context window. Facts Mnemopi derived from an injected memory are not repeated. Anything that looks like a credential is never injected. |
-| Session distillation | A main session ends | A background worker keeps only preferences you stated, decisions you confirmed, and lasting project facts with evidence; work reports and QA results are dropped. Subagent sessions are skipped. Failed runs retry on the next start. |
+| `/memories review` | You explicitly request cleanup | Uses the current conversation's model and tools to review and organize global and current-project memories; it does not switch to the background memory model. |
+| Global memories | Every request | Injects all active global memories, without relevance filtering, with dates, user edits first, and context-budget trimming. Credentials and repeated derived facts are excluded; project-specific content must be rejected at admission. |
+| Session distillation | A main session ends | One background model call extracts evidenced, durable, action-changing facts and checks existing and retired memories. There is no automatic second review. Subagent sessions are skipped; failed runs retry on the next start. |
 | Transcript archiving | Always | Raw conversation copies are retired from recall, so old prompts never come back as instructions. History is kept. |
 
 ## Install
@@ -55,6 +56,8 @@ Tested with OMP 18.13.1 and `@oh-my-pi/pi-mnemopi` 18.12.6.
 ## Usage
 
 Run `/memories`, pick **Global** or **Project**, and select a memory to edit it. Clear the text and save to delete it. Escape goes back one level. Changes apply from the next request.
+
+For model-assisted cleanup, select the model you want in the current conversation and run `/memories review`. It applies justified edits, merges, scope corrections, and deletions through the agent's tools, and asks about unresolved decisions. The bare `/memories` command still opens the editor.
 
 The interface is in English or Simplified Chinese. It follows `LC_ALL`, `LC_MESSAGES`, or `LANG`, and you can pin it in `~/.omp/agent/omp-mnemopi-memory.json`:
 

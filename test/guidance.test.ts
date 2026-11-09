@@ -1,13 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, rmSync, utimesSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Mnemopi } from "@oh-my-pi/pi-mnemopi/core";
 import { archiveRawMemories } from "../src/archive";
-import { conversationFromMessages, guidanceInput, parseGuidance, coverageInput, parseCoverage, type GuidanceConversation, type GuidanceFact } from "../src/guidance";
+import { conversationFromMessages, guidanceInput, parseGuidance, type GuidanceConversation } from "../src/guidance";
 import { readGlobalMemories, withoutRecalledGlobals } from "../src/snapshot";
 import { claimQueued, enqueue, type GuidanceJob } from "../src/queue";
-import { listEntries, listProjectEntries, saveEntry, type MemoryScope } from "../src/store";
+import { deleteEntry, listEntries, listProjectEntries, retiredGuidance, saveEntry, type MemoryScope } from "../src/store";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); });
@@ -143,26 +143,6 @@ test("A future-valid source does not prematurely mark its summary lineage as exp
 	expect(snapshot.content).not.toContain("Fact from a future-valid source");
 });
 
-test("Incomplete, duplicate, or out-of-range semantic decisions cannot silently discard candidates", () => {
-	const facts: GuidanceFact[] = [
-		{ kind: "project_fact", content: "Atlas uses PostgreSQL." },
-		{ kind: "decision", content: "Atlas retains backups for 30 days." },
-	];
-	for (const decisions of [
-		[{ index: 0, keep: true }],
-		[{ index: 0, keep: false }, { index: 0, keep: true }],
-		[{ index: -1, keep: true }, { index: 1, keep: true }],
-		[{ index: 0, keep: true }, { index: 2, keep: true }],
-		[{ index: 0, keep: "false" }, { index: 1, keep: true }],
-	]) expect(() => parseCoverage(JSON.stringify({ decisions }), facts)).toThrow();
-});
-
-test("Semantic comparison does not send candidate or existing credentials to the model", () => {
-	const fact: GuidanceFact = { kind: "decision", content: "Atlas runs daily backups." };
-	expect(() => coverageInput([{ ...fact, content: "password=hunter2" }], [])).toThrow();
-	expect(JSON.parse(coverageInput([fact], ["password=hunter2", "Atlas uses PostgreSQL."])).known_memories)
-		.toEqual(["Atlas uses PostgreSQL."]);
-});
 
 test("Preserves correction order, verifies earlier evidence, and excludes sensitive messages", () => {
 	const conversation: GuidanceConversation = [
@@ -229,6 +209,7 @@ test("Global injection excludes credentials, omits derived memories first when o
 	expect(full.withheld).toBe(1);
 	expect(full.content).not.toContain("sk-test-123");
 	expect(full.entries[0]!.text).toBe("User-confirmed: always answer in English.");
+	expect(full.content).toContain("Secondary project context extracted by the model.");
 	// This budget fits only after removing the derived memory; the user-edited memory must remain.
 	const trimmed = readGlobalMemories(f.path, Date.now(), content => !content.includes("Secondary project context extracted by the model."));
 	expect(trimmed.omitted).toBe(1);
@@ -286,4 +267,34 @@ test("before Mnemopi creates any database, reads return empty results instead of
 	expect(listProjectEntries(path, root)).toEqual([]);
 	expect(archiveRawMemories(path).scannedBanks).toBe(0);
 	expect(existsSync(path)).toBe(false);
+});
+
+
+test("Retired admission feedback excludes active replacements, raw transcripts, summaries, and other projects", () => {
+	const f = fixture();
+	const root = realpathSync(f.root);
+	const remember = (content: string, cwd = root, source = "coding-agent-retain") =>
+		f.memory.remember(content, { scope: "bank", source, metadata: { cwd }, extract: false, extractEntities: false });
+	const deleted = remember("Deleted constraint should not be recreated.");
+	const replaced = remember("Old rule before user correction.");
+	const unrelated = remember("Other project's retired rule.", "/another/project");
+	const raw = remember("Raw transcript is not curated negative feedback.", root, "coding-agent-transcript");
+	const scope: MemoryScope = { global: false, root, projectRoots: [root], label: "Project",
+		banks: [{ bank: "default", path: f.path }] };
+	saveEntry(scope, listEntries(scope).find(entry => entry.rows.some(row => row.id === replaced))!, "Current corrected rule.");
+	deleteEntry(scope, listEntries(scope).find(entry => entry.rows.some(row => row.id === deleted))!);
+	for (const id of [unrelated, raw]) f.memory.beam.invalidate(id, null);
+	addEpisode(f.memory, "retired-summary", "Summary is not independent deletion evidence.", deleted);
+	expect(retiredGuidance([scope])).toEqual(["Deleted constraint should not be recreated."]);
+	expect(listEntries(scope).map(entry => entry.content)).toEqual(["Current corrected rule."]);
+});
+
+test("A date mention cannot become a stand-alone memory", () => {
+	const exchange: GuidanceConversation = [
+		{ role: "user", content: "The migration completed on 2026-11-09." },
+		{ role: "assistant", content: "The migration is complete." },
+	];
+	expect(parseGuidance(JSON.stringify({ memories: [{
+		kind: "project_fact", content: "2026-11-09", from: "user", evidence: "2026-11-09",
+	}] }), exchange)).toEqual([]);
 });

@@ -9,6 +9,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Simplified Chinese interface, selected by `locale` in `omp-mnemopi-memory.json` or the POSIX locale.
 - GitHub Actions workflow running the test suite.
 - Chinese README, `llms.txt` for agent-driven installs, and an agent guide in `AGENTS.md`.
+- `/memories review` starts an explicit review and cleanup using the current conversation's model and tools, with argument completion.
 
 ### Changed
 - Sources moved to `src/` and tests to `test/`; detailed behavior moved to `docs/how-it-works.md`.
@@ -16,6 +17,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - Global memories show their creation date.
 - Facts Mnemopi derived from an injected global memory are no longer injected again as separate entries.
 - Distillation keeps only project facts that stay useful and cannot be rediscovered from the repository, and drops work reports, QA results, measurements, and commit hashes.
+- Global memory admission now requires a standing user contract or stable profile valid across conversations, not merely usefulness in several projects; global injection remains full-bank and does not filter by task relevance.
+- Automatic distillation uses one model call, incorporating known and retired memories in the extraction prompt; the automatic second admission and duplication review has been removed.
 
 ### Fixed
 - On a fresh install, reading memories before Mnemopi created its database no longer raises `unable to open database file`.

@@ -165,6 +165,25 @@ export function listEntries(scope: MemoryScope, source?: string): MemoryEntry[] 
 	return [...grouped.values()];
 }
 
+/** Retired working memories are negative admission evidence, never active guidance. */
+export function retiredGuidance(scopes: MemoryScope[]): string[] {
+	const retired = new Set<string>();
+	for (const scope of scopes) {
+		const matches = new Map<string, boolean>();
+		for (const bank of scope.banks) {
+			const db = openForRead(bank.path);
+			try {
+				for (const row of rows(db)) {
+					if (row.store !== "working" || !row.valid_until || row.superseded_by || active(row) ||
+						isArchiveSource(row.source) || !belongs(metadata(row.metadata_json), scope, matches)) continue;
+					retired.add(row.content.replace(/^\[coding-agent-retain\]\s*/, "").trim());
+				}
+			} finally { db.close(); }
+		}
+	}
+	return [...retired];
+}
+
 /** Memories available here: shared preferences plus this project's entries, without duplicate text. */
 export function listProjectEntries(globalPath: string, cwd: string): Array<{ scope: MemoryScope; entry: MemoryEntry }> {
 	const grouped = new Map<string, { scope: MemoryScope; entry: MemoryEntry }>();

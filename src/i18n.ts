@@ -21,7 +21,7 @@ const en = {
 	globalMemories: "Global memories",
 	projectMemories: "Project memories",
 	cannotOpen: "Cannot open memories: {error}",
-	commandDescription: "View, edit, and delete memories available to this project",
+	commandDescription: "View and edit memories; /memories review starts a review with the current model",
 	omitted: "Context is nearly full; omitted {count} lower-priority global memories for this request.",
 	readFailed: "Could not read global memories; this request was sent without them: {error}",
 	status: "{count} memories",
@@ -30,6 +30,9 @@ const en = {
 	noDatabase: "The memory database path is unavailable; no replacement database was created.",
 	conflict: "This memory was changed by another session. Reopen it; nothing was overwritten.",
 	emptySave: "Saving empty text requires delete confirmation.",
+	reviewDescription: "Review and organize global and current-project memories with the current model",
+	commandUsage: "Usage: /memories or /memories review",
+	noReviewMemories: "No non-sensitive memories are available for review.",
 };
 type Key = keyof typeof en;
 
@@ -52,7 +55,7 @@ const zhCN: Record<Key, string> = {
 	globalMemories: "全局记忆",
 	projectMemories: "项目记忆",
 	cannotOpen: "无法打开记忆面板：{error}",
-	commandDescription: "查看、编辑和删除当前项目可用记忆",
+	commandDescription: "查看和编辑记忆；/memories review 使用当前模型审查整理",
 	omitted: "上下文容量不足，本次省略 {count} 条低优先级全局记忆。",
 	readFailed: "全局记忆读取失败，本次请求未注入：{error}",
 	status: "记忆{count}条",
@@ -61,6 +64,9 @@ const zhCN: Record<Key, string> = {
 	noDatabase: "当前记忆库路径不可用，未创建替代数据库。",
 	conflict: "这条记忆已被其他会话修改，请重新打开；本次没有覆盖内容。",
 	emptySave: "空白正文需要通过删除确认处理。",
+	reviewDescription: "使用当前模型审查整理全局和当前项目记忆",
+	commandUsage: "用法：/memories 或 /memories review",
+	noReviewMemories: "没有可供审查的非敏感记忆。",
 };
 
 const catalogs: Record<string, Record<Key, string>> = { en, "zh-CN": zhCN };

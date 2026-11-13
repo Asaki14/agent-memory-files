@@ -28,6 +28,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - Automatic distillation uses one model call, incorporating known and retired memories in the extraction prompt; the automatic second admission and duplication review has been removed.
 
 ### Fixed
+- Session-exit extraction no longer loses large conversations when OMP exits before the worker starts reading.
+- Memory extraction tries the configured fallback models after a model fails, including when its quota is exhausted.
 - On a fresh install, reading memories before Mnemopi created its database no longer raises `unable to open database file`.
 - Subagent sessions are no longer distilled; their task briefs were being saved as user decisions.
 - Memories saved in `/memories` and distilled automatically are written under the bank's own session id, so OMP's `memory_edit` can update and forget them instead of reporting `not found`. Rows written by earlier versions need their `session_id` set to the bank name once.

@@ -1,12 +1,11 @@
-import { spawn } from "node:child_process";
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Writable } from "node:stream";
 import { Settings, type ExtensionAPI, type ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { t } from "./i18n";
 import { conversationFromMessages, safeConversation } from "./guidance";
 import { memoryContext, memoryScopes } from "./memory-file";
-import { claimQueued, enqueue, MAX_ATTEMPTS, queueDirectory, release, type WorkerPayload } from "./queue";
+import { claimQueued, queueDirectory, release, type WorkerPayload } from "./queue";
+import { dispatch } from "./worker-process";
 
 const workerPath = join(import.meta.dir, "worker.ts");
 /** `~/.omp/logs/memory-guidance.log` for the default agent dir; independent of where the extension is installed. */
@@ -17,29 +16,9 @@ function logPath(): string {
 }
 
 /** Run extraction in a detached worker; shutdown hooks have a 2s deadline and extraction must outlive the host. */
-function dispatch(cwd: string, payload: WorkerPayload): void {
-	const report = (error: Error) => {
-		const attempts = payload.attempts + 1;
-		const requeue = attempts < MAX_ATTEMPTS;
-		appendFileSync(logPath(), JSON.stringify({ event: requeue ? "memory_session_requeued" : "memory_session_abandoned",
-			sessionId: payload.job.sessionId, error: error.message }) + "\n");
-		if (requeue) enqueue(payload.queueDir, payload.job, attempts);
-		release(payload.claimed);
-	};
-	const log = openSync(logPath(), "a", 0o600);
-	try {
-		const child = spawn(process.execPath, ["--mode", "rpc", "--no-session", "--no-tools", "--no-extensions",
-			"--no-context-files", "--no-skills", "--no-title", "--cwd", cwd, "-e", workerPath], {
-			cwd, detached: true, stdio: ["ignore", "ignore", log, "pipe"],
-		});
-		let failed = false;
-		const fail = (error: Error) => { if (!failed) { failed = true; report(error); } };
-		child.on("error", fail);
-		const input = child.stdio[3] as Writable;
-		child.unref();
-		input.on("error", fail);
-		input.end(JSON.stringify(payload));
-	} finally { closeSync(log); }
+function dispatchWorker(cwd: string, payload: WorkerPayload): void {
+	dispatch(cwd, payload, logPath(), ["--mode", "rpc", "--no-session", "--no-tools", "--no-extensions",
+		"--no-context-files", "--no-skills", "--no-title", "--cwd", cwd, "-e", workerPath]);
 }
 
 export default function memoryGuidance(pi: ExtensionAPI): void {
@@ -51,7 +30,7 @@ export default function memoryGuidance(pi: ExtensionAPI): void {
 		for (const claimed of claimQueued(queueDir)) {
 			try {
 				const { job, attempts } = JSON.parse(readFileSync(claimed, "utf8")) as Pick<WorkerPayload, "job" | "attempts">;
-				dispatch(job.cwd, { job, attempts, queueDir, claimed });
+				dispatchWorker(job.cwd, { job, attempts, queueDir, claimed });
 			} catch (error) {
 				appendFileSync(logPath(), JSON.stringify({ event: "memory_queue_invalid", file: claimed,
 					error: error instanceof Error ? error.message : String(error) }) + "\n");
@@ -76,7 +55,7 @@ export default function memoryGuidance(pi: ExtensionAPI): void {
 		try {
 			const [global, project] = memoryScopes(Settings.instance.getAgentDir(), ctx.cwd);
 			lastHandled = key;
-			dispatch(ctx.cwd, {
+			dispatchWorker(ctx.cwd, {
 				job: { global, project, cwd: ctx.cwd, sessionId, sourceEntry, sessionFile: ctx.sessionManager.getSessionFile(), conversation: messages },
 				attempts: 0, queueDir: queueDirectory(Settings.instance.getAgentDir()),
 			});

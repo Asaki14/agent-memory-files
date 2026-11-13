@@ -13,24 +13,30 @@ export async function completeMemory(ctx: ExtensionContext, systemPrompt: string
 	const settings = Settings.instance;
 	const sessionId = ctx.sessionManager.getSessionId();
 	const candidates = resolveRoleChain("memory", settings, roleCandidatePool("memory", settings, ctx.modelRegistry));
+	const failures: string[] = [];
 	for (const { model, thinkingLevel } of candidates) {
 		if (model.api === "local-inference" || model.provider === "ollama" || model.provider === "lmstudio") continue;
-		if (!await ctx.modelRegistry.getApiKey(model, sessionId)) continue;
-		const level = concreteThinkingLevel(thinkingLevel);
-		const response = await completeSimple(model, {
-			systemPrompt: [systemPrompt], messages: [{ role: "user", content: input, timestamp: Date.now() }],
-		}, {
-			apiKey: ctx.modelRegistry.resolver(model, sessionId), sessionId,
-			reasoning: clampThinkingLevelForModel(model, toReasoningEffort(level)),
-			disableReasoning: shouldDisableReasoning(level) ? true : undefined,
-		});
-		if (response.stopReason !== "stop") {
-			throw new Error(`${model.provider}/${model.id}: ${response.stopReason}${response.errorMessage ? `: ${response.errorMessage}` : ""}`);
+		try {
+			if (!await ctx.modelRegistry.getApiKey(model, sessionId)) continue;
+			const level = concreteThinkingLevel(thinkingLevel);
+			const response = await completeSimple(model, {
+				systemPrompt: [systemPrompt], messages: [{ role: "user", content: input, timestamp: Date.now() }],
+			}, {
+				apiKey: ctx.modelRegistry.resolver(model, sessionId), sessionId,
+				reasoning: clampThinkingLevelForModel(model, toReasoningEffort(level)),
+				disableReasoning: shouldDisableReasoning(level) ? true : undefined,
+			});
+			if (response.stopReason !== "stop") {
+				throw new Error(`${response.stopReason}${response.errorMessage ? `: ${response.errorMessage}` : ""}`);
+			}
+			const text = response.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+			if (!text.trim()) throw new Error("memory model returned an empty response.");
+			return text;
+		} catch (error) {
+			failures.push(`${model.provider}/${model.id}: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		const text = response.content.filter(block => block.type === "text").map(block => block.text).join("\n");
-		if (!text.trim()) throw new Error(`${model.provider}/${model.id}: memory model returned an empty response.`);
-		return text;
 	}
+	if (failures.length) throw new Error(`All memory models failed:\n${failures.join("\n")}`);
 	throw new Error("No remote model is available for the memory role; local models are not used and nothing was saved.");
 }
 

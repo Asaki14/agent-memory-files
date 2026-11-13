@@ -11,7 +11,7 @@ export interface GuidanceJob {
 	sessionFile?: string;
 	conversation: GuidanceConversation;
 }
-/** What the session hands the detached worker over fd 3. */
+/** Persisted worker input, inherited by the detached worker as a regular file on fd 3. */
 export interface WorkerPayload { job: GuidanceJob; attempts: number; queueDir: string; claimed?: string }
 
 /** Total tries per conversation, including the first one at session end. */

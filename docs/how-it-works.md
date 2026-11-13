@@ -19,15 +19,15 @@ At session start, the extension reads both files and adds them to the system pro
 
 ## Distillation
 
-On session exit or switch, the current branch's user messages, completed assistant replies, and `ask` selections are passed through a credential filter and handed to a detached worker over a pipe. Subagent sessions are skipped: their user messages are the parent agent's task briefs, not the user's words. Sessions removed with `/delete` are skipped too: the worker stores nothing if the transcript no longer exists when the model replies. OMP's shutdown hook has a 2-second limit, so the worker outlives the host. The worker:
+On session exit or switch, the current branch's user messages, completed assistant replies, and `ask` selections are passed through a credential filter and saved to an owner-readable queue file. The detached worker inherits that file on fd 3, so host exit cannot truncate the conversation. Subagent sessions are skipped: their user messages are the parent agent's task briefs, not the user's words. Sessions removed with `/delete` are skipped too: the worker stores nothing if the transcript no longer exists when the model replies. OMP's shutdown hook has a 2-second limit, so the worker outlives the host. The worker:
 
-1. Sends the conversation, both files' memories, and the remaining room in each file to the `memory` role in one call. The model returns at most 8 candidates, each with a scope and verbatim evidence, applying the bar of its scope and skipping anything already covered.
+1. Sends the conversation, both files' memories, and the remaining room in each file to the `memory` role. If a model fails, it tries the next configured fallback model; the job fails only after all usable remote candidates fail. The model returns at most 8 candidates, each with a scope and verbatim evidence, applying the bar of its scope and skipping anything already covered.
 2. Drops individual candidates with missing evidence, assistant-attributed preferences or decisions, project facts marked global, raw messages, stand-alone dates, or sensitive fields.
 3. Appends the rest, dated, to the matching file. Exact duplicates are skipped, and a candidate that would push the file past its limit is not written and is logged as rejected.
 
 Only the option the user actually selected in an `ask` counts as a decision; unselected options are context.
 
-If extraction fails (no model, malformed output, worker failed to start), the job is written to `~/.omp/agent/memories/guidance-queue/` (mode 0600, credential-filtered conversation only) and retried on the next session start, 3 attempts in total. Sessions claim jobs by atomic rename, so a job never runs twice at once; a claim older than 30 minutes is treated as abandoned. A killed OMP process does not trigger extraction.
+Jobs are persisted in `~/.omp/agent/memories/guidance-queue/` before worker launch (mode 0600, credential-filtered conversation only). Successful workers remove their claimed input file. If extraction fails (no model, malformed output, worker failed to start), the job is queued for the next session start, 3 attempts in total. Sessions claim retry jobs by atomic rename, so a job never runs twice at once; a claim older than 30 minutes is treated as abandoned. A killed OMP process does not trigger extraction.
 
 Worker results go to `~/.omp/logs/memory-guidance.log` as JSON lines: `memory_session_retained` (with `stored` and any `rejected` reasons), `memory_session_requeued`, `memory_session_abandoned`, `memory_queue_invalid`.
 
